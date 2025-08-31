@@ -1,0 +1,38 @@
+package bot
+
+import(
+	"log"
+	"time"
+)
+
+type Bot struct {
+	Token   string
+	APIBase string
+}
+
+func New(token string) *Bot {
+	return &Bot{
+		Token:   token,
+		APIBase: "https://api.telegram.org/bot" + token + "/",
+	}
+}
+
+func (b *Bot) Start() {
+	log.Println("Bot started ...")
+
+	var offset int
+	for {
+		updates, err := b.GetUpdates(offset, 30)
+		if err != nil {
+			log.Printf("getUpdates error: %v", err)
+			time.Sleep(3 * time.Second)
+			continue
+		}
+		for _, u := range updates {
+			offset = u.UpdateID + 1
+			if u.Message != nil {
+				b.HandleMessage(u.Message)
+			}
+		}
+	}
+}
