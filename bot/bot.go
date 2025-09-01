@@ -8,12 +8,14 @@ import(
 type Bot struct {
 	Token   string
 	APIBase string
+	Sent    map[string]bool //cache of sent links
 }
 
 func New(token string) *Bot {
 	return &Bot{
 		Token:   token,
 		APIBase: "https://api.telegram.org/bot" + token + "/",
+		Sent:    make(map[string]bool),
 	}
 }
 
