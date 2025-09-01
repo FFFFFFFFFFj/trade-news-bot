@@ -26,7 +26,7 @@ type Item struct {
 	PubDate string `xml:"pubDate"`
 }
 
-//Fetch loads the RSS and returns a list of news items
+//Fetch loads RSS from one source
 func Fetch(url string) ([]Item, error) {
 	resp, err := client.Get(url)
 	if err != nil {
@@ -39,4 +39,17 @@ func Fetch(url string) ([]Item, error) {
 		return nil, err
 	}
 	return rss.Channel.Items, nil
+}
+
+//FetchALL loads news from multiple sources
+func FetchALL(urls []string) ([]Item, error) {
+	var all []Item
+	for _, u := range urls {
+		items, err := Fetch(u) 
+		if err != nil {
+			continue // skip source with error
+		}
+		all = append(all, items...)
+	}
+	return all, nil
 }

@@ -24,7 +24,14 @@ func (b *Bot) HandleMessage(m *Message) {
 		b.SendMessage(m.Chat.ID, helpText) 
 		
 	case "/latest":
-		items, err := rss.Fetch("https://www.investing.com/rss/news.rss")
+		sources := []string{
+			"https://www.investig.com/rss/news.rss",
+			"https://feeds.bbci.co.uk/news/business/rss.xml",
+			"https://www.reutersagency.com/feed/?best-topics=business-finance",
+		}
+
+		
+		items, err := rss.FetchALL(sources)
 		if err != nil {
 			b.SendMessage(m.Chat.ID, "⚠️ Ошибка загрузки новостей!" +
 						 "Возникла проблема с получением свежих данных с источников. 🛑" +
@@ -33,7 +40,7 @@ func (b *Bot) HandleMessage(m *Message) {
 			return
 		}
 
-		limit := 3
+		limit := 5
 		if len(items) < limit {
 			limit = len(items)
 		}
