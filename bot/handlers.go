@@ -12,7 +12,14 @@ func (b *Bot) HandleMessage(m *Message) {
 	txt := strings.TrimSpace(m.Text)
 	switch txt {
 	case "/start":
-		b.SendMessage(m.Chat.ID, "Hi, I'm bot. Write /latest")
+		b.SendMessage(m.Chat.ID, "ПриветX ")
+	
+	case "/help":
+		helpText := "/start - ***\n" +
+					"/latest - ***\n" +
+					"/help - ***"
+		b.SendMessage(m.Chat.ID, helpText) 
+		
 	case "/latest":
 		items, err := rss.Fetch("https://www.investing.com/rss/news.rss")
 		if err != nil {
@@ -30,7 +37,10 @@ func (b *Bot) HandleMessage(m *Message) {
 			if b.Sent[items[i].Link] {
 				continue // already sent
 			}
-			sb.WriteString(fmt.Sprintf("* %s\n%s\n\n", items[i].Title, items[i].Link))
+			sb.WriteString(fmt.Sprintf("* %s\n*%s\n*%s\n\n", 
+				items[i].Title, 
+				items[i].PubDate,
+				items[i].Link,))
 			b.Sent[items[i].Link] = true // mark as sent
 		}
 

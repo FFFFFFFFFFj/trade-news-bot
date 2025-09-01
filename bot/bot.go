@@ -2,6 +2,7 @@ package bot
 
 import(
 	"log"
+	"strings"
 	"time"
 )
 
@@ -26,6 +27,9 @@ func (b *Bot) Start() {
 	for {
 		updates, err := b.GetUpdates(offset, 30)
 		if err != nil {
+			if strings.Contains(err.Error(), "Client.Timeout") {
+				continue
+			}
 			log.Printf("getUpdates error: %v", err)
 			time.Sleep(3 * time.Second)
 			continue
