@@ -25,13 +25,15 @@ func (b *Bot) HandleMessage(m *Message) {
 		
 	case "/latest":
 		sources := []string{
-			"https://www.investig.com/rss/news.rss",
-			"https://feeds.bbci.co.uk/news/business/rss.xml",
-			"https://www.reutersagency.com/feed/?best-topics=business-finance",
+			"https://www.finmarket.ru/about/fm-news.asp",
+			"https://www.bfm.ru/rss.html",
+			"https://www.finansy.ru/st/rss-all.html",
+			"https://ru.investing.com/webmaster-tools/rss",
+			"https://www.liga.net/rss-page",
 		}
 
 		
-		items, err := rss.FetchALL(sources)
+		items, err := rss.FetchAll(sources)
 		if err != nil {
 			b.SendMessage(m.Chat.ID, "⚠️ Ошибка загрузки новостей!" +
 						 "Возникла проблема с получением свежих данных с источников. 🛑" +
@@ -46,6 +48,7 @@ func (b *Bot) HandleMessage(m *Message) {
 		}
 
 		var sb strings.Builder
+		count := 0
 		for i := 0; i < limit; i++ {
 			if b.Sent[items[i].Link] {
 				continue // already sent
@@ -55,6 +58,7 @@ func (b *Bot) HandleMessage(m *Message) {
 				items[i].PubDate,
 				items[i].Link,))
 			b.Sent[items[i].Link] = true // mark as sent
+			count++
 		}
 
 		if sb.Len() == 0 {

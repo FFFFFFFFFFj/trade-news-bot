@@ -2,6 +2,8 @@ package rss
 
 import (
 	"encoding/xml"
+	"fmt"
+	"io"
 	"net/http"
 	"time"
 )
@@ -20,33 +22,81 @@ type Channel struct {
 	Items []Item `xml:"item"`
 }
 
-type Item struct {
-	Title   string `xml:"title"`
-	Link    string `xml:"link"`
-	PubDate string `xml:"pubDate"`
+type Atom struct {
+	XMLName xml.Name   `xml:"feed"`
+	Entries []AtomItem `xml:"entry"`
 }
 
-//Fetch loads RSS from one source
+type AtomItem struct {
+	Title   string `xml:"title"`
+	Link    Link   `xml:"link"`
+	Updated string `xml:"updated"`
+}
+
+type Link struct {
+	Href string `xml:"href,attr"`
+}
+
+// Unified item
+type Item struct {
+	Title   string
+	Link    string
+	PubDate string
+}
+
+// Fetch loads RSS/Atom from one sourse
 func Fetch(url string) ([]Item, error) {
-	resp, err := client.Get(url)
+	req, _ := http.NewRequest("GET", url, nil)
+	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; TradeNewsBot/1.0)")
+	
+	resp, err := client.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("fetch error: %w", err)
 	}
 	defer resp.Body.Close()
 
-	var rss RSS
-	if err := xml.NewDecoder(resp.Body).Decode(&rss); err != nil {
-		return nil, err
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read error: %w", err)
 	}
-	return rss.Channel.Items, nil
+
+	// Try RSS
+	var rss RSS
+	if err := xml.Unmarshal(data, &rss); err == nil && len(rss.Channel.Items) > 0 {
+		items := rss.Channel.Items
+		for i := range items {
+			if items[i].PubDate == "" {
+				items[i].PubDate = time.Now().Format(time.RFC1123)
+			}
+		}
+		return items, nil
+		
+	}
+
+	// Try Atom
+	var atom Atom
+	if err := xml.Unmarshal(data, &atom); err == nil && len(atom.Entries) > 0 {
+		items := make([]Item, 0, len(atom.Entries))
+		for _, e := range atom.Entries {
+			items = append(items, Item{
+				Title:   e.Title,
+				Link:    e.Link.Href,
+				PubDate: e.Updated,
+			})
+		}
+		return items, nil
+	}
+		
+	return nil, fmt.Errorf("unknown feed format from %s", url)
 }
 
-//FetchALL loads news from multiple sources
-func FetchALL(urls []string) ([]Item, error) {
+//FetchAll loads news from multiple sources
+func FetchAll(urls []string) ([]Item, error) {
 	var all []Item
 	for _, u := range urls {
 		items, err := Fetch(u) 
 		if err != nil {
+			fmt.Println("!!!Source error:", u, err)
 			continue // skip source with error
 		}
 		all = append(all, items...)
