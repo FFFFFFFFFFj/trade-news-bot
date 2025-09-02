@@ -11,17 +11,25 @@ import (
 //HTTP client with timeout
 var client = &http.Client{Timeout: 15 * time.Second}
 
-//Structures for RSS parsing
+//---RSS 2.0---
 type RSS struct {
 	XMLName xml.Name `xml:"rss"`
 	Channel Channel  `xml:"channel"`
 }
 
 type Channel struct {
-	Title string `xml:"title"`
-	Items []Item `xml:"item"`
+	Title string    `xml:"title"`
+	Items []RSSItem `xml:"item"`
 }
 
+type RSSItem struct {
+	Title   string `xml:"title"`
+	Link    string `xml:"link"`
+	PubDate string `xml:"pubDate"`
+	DCDate  string `xml:"http://purl.org/dc/elements/1.1/date"`
+}
+
+//---Atom---
 type Atom struct {
 	XMLName xml.Name   `xml:"feed"`
 	Entries []AtomItem `xml:"entry"`
@@ -37,6 +45,18 @@ type Link struct {
 	Href string `xml:"href,attr"`
 }
 
+//---RSS 1.0 (RDF)---
+type RDF struct {
+	XMLName xml.Name  `xml:"RDF"`
+	Items   []RDFItem `xml:"item"`	
+}
+
+type RDFItem struct {
+	Title  string `xml:"title"`
+	Link   string `xml:"link"`
+	DCDate string `xml:"http://purl.org/dc/elements/1.1/date"`
+}
+
 // Unified item
 type Item struct {
 	Title   string
@@ -44,7 +64,7 @@ type Item struct {
 	PubDate string
 }
 
-// Fetch loads RSS/Atom from one sourse
+// Fetch loads RSS/Atom/RDF from one sourse
 func Fetch(url string) ([]Item, error) {
 	req, _ := http.NewRequest("GET", url, nil)
 	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; TradeNewsBot/1.0)")
@@ -60,14 +80,23 @@ func Fetch(url string) ([]Item, error) {
 		return nil, fmt.Errorf("read error: %w", err)
 	}
 
-	// Try RSS
+	// Try RSS 2.0
 	var rss RSS
 	if err := xml.Unmarshal(data, &rss); err == nil && len(rss.Channel.Items) > 0 {
-		items := rss.Channel.Items
-		for i := range items {
-			if items[i].PubDate == "" {
-				items[i].PubDate = time.Now().Format(time.RFC1123)
+		items := make([]Item, 0, len(rss.Channel.Items))
+		for _, it := range rss.Channel.Items {
+			date := it.PubDate
+			if date == "" {
+				date = it.DCDate
 			}
+			if date == "" {
+				date = time.Now().Format(time.RFC1123)
+			}
+			items = append(items, Item{
+				Title:   it.Title,
+				Link:    it.Link,
+				PubDate: date,
+			})
 		}
 		return items, nil
 		
@@ -82,6 +111,24 @@ func Fetch(url string) ([]Item, error) {
 				Title:   e.Title,
 				Link:    e.Link.Href,
 				PubDate: e.Updated,
+			})
+		}
+		return items, nil
+	}
+
+	// Try RDF RSS 1.0
+	var rdf RDF
+	if err := xml.Unmarshal(data, &rdf); err == nil && len(rdf.Items) > 0 {
+		items := make([]Item, 0, len(rdf.Items))
+		for _, it := range rdf.Items {
+			date := it.DCDate
+			if date == "" {
+				date = time.Now().Format(time.RFC1123)
+			}
+			items = append(items, Item{
+				Title:   it.Title,
+				Link:    it.Link,
+				PubDate: date,
 			})
 		}
 		return items, nil
