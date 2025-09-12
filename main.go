@@ -25,6 +25,6 @@ func main() {
 		log.Fatal("Migration faild:", err)
 	}
 
-	b := bot.New(token)
+	b := bot.New(token, db)
 	b.Start()
 }

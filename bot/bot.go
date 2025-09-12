@@ -4,12 +4,14 @@ import(
 	"log"
 	"strings"
 	"time"
+	"database/sql"
 )
 
 type Bot struct {
 	Token   string
 	APIBase string
 	Sent    map[string]bool //cache of sent links
+	db *sql.DB //add database conect
 }
 
 func New(token string) *Bot {
@@ -17,6 +19,7 @@ func New(token string) *Bot {
 		Token:   token,
 		APIBase: "https://api.telegram.org/bot" + token + "/",
 		Sent:    make(map[string]bool),
+		db: db,
 	}
 }
 

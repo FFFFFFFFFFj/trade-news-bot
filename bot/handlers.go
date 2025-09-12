@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/FFFFFFFFFFj/trade-news-bot/rss"
+	"github.com/FFFFFFFFFFj/trade-news-bot/storage"
 )
 
 func (b *Bot) HandleMessage(m *Message) {
@@ -47,6 +48,14 @@ func (b *Bot) HandleMessage(m *Message) {
 						 "Пожалуйста, попробуйте позже или отправьте команду /help для дополнительной" +
 						 "информации. 🙏")
 			return
+		}
+
+		//save news in base
+		for _, item := range items {
+			err := storage.SaveNews(db, item, sourceURL)
+			if err != nil {
+				log.Printf("SaveNews error: %v", err)
+			}
 		}
 
 		limit := 5

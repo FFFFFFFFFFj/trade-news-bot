@@ -1,10 +1,11 @@
-package main
+package storage
 
 import (
 	"database/sql"
 	"fmt"
 	_ "github.com/lib/pq"
 	"log"
+	"github.com/FFFFFFFFFFj/trade-news-bot/rss"
 )
 
 func ConnectDB() (*sql.DB, error) {
@@ -33,14 +34,35 @@ func ConnectDB() (*sql.DB, error) {
 }
 
 func Migrate(db *sql.DB) error {
-	query := `
-		CREATE TABLE IF NOT EXISTS rss_sources (
+	queries := []string{
+		`CREATE TABLE IF NOT EXISTS rss_sources (
 			id SERIAL PRIMARY KEY,
 			url TEXT UNIQUE NOT NULL,
 			owner_telegram_id BIGINT NOT NULL
-		);
-	`
-	_, err := db.Exec(query)
-	return err
+		);`,
+		`CREATE TABLE IF NOT EXISTS news (
+			id SERIAL PRIMARY KEY,
+			title TEXT NOT NULL,
+			link TEXT UNIQUE NOT NULL,
+			pub_date TIMESTAMP,
+			source_url TEXT
+		);`,
+	}
+	for _, query := range queries {
+		_, err := db.Exec(query)
+		if err != nil {
+			return err
+		}
+	} 
+	return nil
 }
 
+func SaveNews(db *sql.DB, item rss.Item, sourceURL string) error {
+	query := `
+		INSERT INTO news (title, link, pub_date, source_url)
+		VALUES ($1, $2, $3. $4)
+		ON CONFLICT (link) DO NOTHING;
+	`
+	_, err := db.Exec(query, item.Title, item.Link, item.PubDate, sourceURL)
+	return err
+}
