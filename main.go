@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/FFFFFFFFFFj/trade-news-bot/bot"
+	"github.com/FFFFFFFFFFj/trade-news-bot/storage"
 )
 
 
@@ -14,13 +15,13 @@ func main() {
 		log.Fatal("BOT_TOKEN not set")
 	}
 
-	db, err := ConnectDB()
+	db, err := storage.ConnectDB()
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer db.Close()
 
-	err = Migrate(db)
+	err = storage.Migrate(db)
 	if err != nil {
 		log.Fatal("Migration faild:", err)
 	}

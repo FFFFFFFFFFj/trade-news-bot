@@ -60,7 +60,7 @@ func Migrate(db *sql.DB) error {
 func SaveNews(db *sql.DB, item rss.Item, sourceURL string) error {
 	query := `
 		INSERT INTO news (title, link, pub_date, source_url)
-		VALUES ($1, $2, $3. $4)
+		VALUES ($1, $2, $3, $4)
 		ON CONFLICT (link) DO NOTHING;
 	`
 	_, err := db.Exec(query, item.Title, item.Link, item.PubDate, sourceURL)

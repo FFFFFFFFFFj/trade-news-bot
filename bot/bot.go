@@ -14,7 +14,7 @@ type Bot struct {
 	db *sql.DB //add database conect
 }
 
-func New(token string) *Bot {
+func New(token string, db *sql.DB) *Bot {
 	return &Bot{
 		Token:   token,
 		APIBase: "https://api.telegram.org/bot" + token + "/",

@@ -51,10 +51,17 @@ func (b *Bot) HandleMessage(m *Message) {
 		}
 
 		//save news in base
-		for _, item := range items {
-			err := storage.SaveNews(db, item, sourceURL)
+		for _, sourceURL := range sources {
+			items, err := rss.Fetch(sourceURL)
 			if err != nil {
-				log.Printf("SaveNews error: %v", err)
+				log.Printf("Error fetching %s: %v", sourceURL, err)
+				continue
+			}
+			for _, item := range items {
+				err := storage.SaveNews(b.db, item, sourceURL)
+				if err != nil {
+					log.Printf("SaveNews error: %v", err)
+				}
 			}
 		}
 
