@@ -10,13 +10,13 @@ import (
 func ConnectDB() (*sql.DB, error) {
 	// Connection parametrs to yuor database, replace with real ones
 	user := "postgres"
-	password := "yourpassword"
-	dbname := "yourdbname"
-	host := "localhost"
-	port := 5432
+    password := "postgres"
+	dbname := "news_feed_bot"
+	host := "/var/run/postgresql"
+	port := 5433
 
 
-	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable", host, port, user, password, dbname)
+	psqlInfo := fmt.Sprintf("user=%s password=%s dbname=%s host=%s port=%d  sslmode=disable", user, password,dbname, host, port)
 
 	db, err := sql.Open("postgres", psqlInfo)
 	if err != nil {
