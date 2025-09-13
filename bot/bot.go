@@ -1,17 +1,20 @@
 package bot
 
-import(
+import (
 	"log"
 	"strings"
 	"time"
 	"database/sql"
+
+	"github.com/FFFFFFFFFFj/trade-news-bot/rss"
+	"github.com/FFFFFFFFFFj/trade-news-bot/storage"
 )
 
 type Bot struct {
 	Token   string
 	APIBase string
-	Sent    map[string]bool //cache of sent links
-	db *sql.DB //add database conect
+	Sent    map[string]bool // cache of sent links
+	db      *sql.DB         // connection to the database
 }
 
 func New(token string, db *sql.DB) *Bot {
@@ -19,13 +22,12 @@ func New(token string, db *sql.DB) *Bot {
 		Token:   token,
 		APIBase: "https://api.telegram.org/bot" + token + "/",
 		Sent:    make(map[string]bool),
-		db: db,
+		db:      db,
 	}
 }
 
 func (b *Bot) Start() {
 	log.Println("Bot started ...")
-
 	var offset int
 	for {
 		updates, err := b.GetUpdates(offset, 30)
@@ -44,4 +46,26 @@ func (b *Bot) Start() {
 			}
 		}
 	}
+}
+
+// Background goroutine for periodic parsing and writing news to the database
+func (b *Bot) StartNewsUpdater(sources []string, interval time.Duration) {
+	go func() {
+		for {
+			for _, sourceURL := range sources {
+				items, err := rss.Fetch(sourceURL)
+				if err != nil {
+					log.Printf("RSS fetch error (%s): %v", sourceURL, err)
+					continue
+				}
+				for _, item := range items {
+					err = storage.SaveNews(b.db, item, sourceURL)
+					if err != nil {
+						log.Printf("SaveNews error: %v", err)
+					}
+				}
+			}
+			time.Sleep(interval)
+		}
+	}()
 }
