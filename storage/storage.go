@@ -66,3 +66,31 @@ func SaveNews(db *sql.DB, item rss.Item, sourceURL string) error {
 	_, err := db.Exec(query, item.Title, item.Link, item.PubDate, sourceURL)
 	return err
 }
+
+func GetLatestNews(db *sql.DB, limit int) ([]rss.Item, error) {
+	query := `
+		SELECT title, link, COALESCE(to_char(pub_date, 'YYYY-MM-DD HH24:MI:SS'), ''), source_url
+		FROM news
+		ORDER BY pub_date DESC NULLS LAST
+		LIMIT $1
+	`
+	rows, err := db.Query(query, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var items []rss.Item
+	for rows.Next() {
+		var item rss.Item
+		var published string
+		err = rows.Scan(&item.Title, &item.Link, &published, new(string))
+		if err != nil {
+			return nil, err
+		}
+		item.PubDate = published
+		items = append(items, item)
+	}
+	return items, nil
+}
+ 
