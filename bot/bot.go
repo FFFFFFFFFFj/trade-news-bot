@@ -17,6 +17,14 @@ type Bot struct {
 	db      *sql.DB         // connection to the database
 }
 
+var AdminIDs = map[int64]bool{
+	839986298: true
+}
+
+func (b *Bot) IsAdmin(userID int64) bool {
+	return AdminIDs[userID]
+}
+
 func New(token string, db *sql.DB) *Bot {
 	return &Bot{
 		Token:   token,
