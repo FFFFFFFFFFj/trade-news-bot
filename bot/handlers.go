@@ -69,7 +69,7 @@ func (b *Bot) HandleMessage(m *Message) {
 			return
 		}
 		url := parts[1]
-		err := storage.AddSource(b.db, url)
+		err := storage.AddSource(b.db, url, 839986298)
 		if err != nil {
 			b.SendMessage(m.Chat.ID, "Ошибка при добавлении источника.")
 			log.Printf("AddSource error: %v", err)
