@@ -1,6 +1,7 @@
 package bot
 
 import (
+	"fmt"
 	"log"
 	"strings"
 	"time"
@@ -13,12 +14,12 @@ import (
 type Bot struct {
 	Token   string
 	APIBase string
-	Sent    map[string]bool // cache of sent links
-	db      *sql.DB         // connection to the database
+	Sent    map[string]bool // кэш отправленных ссылок (для одного запуска)
+	db      *sql.DB         // подключение к базе
 }
 
 var AdminIDs = map[int64]bool{
-	839986298: true
+	839986298: true,
 }
 
 func (b *Bot) IsAdmin(userID int64) bool {
@@ -56,7 +57,6 @@ func (b *Bot) Start() {
 	}
 }
 
-// Background goroutine for periodic parsing and writing news to the database
 func (b *Bot) StartNewsUpdater(sources []string, interval time.Duration) {
 	go func() {
 		for {
@@ -76,4 +76,77 @@ func (b *Bot) StartNewsUpdater(sources []string, interval time.Duration) {
 			time.Sleep(interval)
 		}
 	}()
+}
+
+// Обработка сообщений
+func (b *Bot) HandleMessage(m *Message) {
+	txt := strings.TrimSpace(m.Text)
+	switch {
+	case txt == "/start":
+		b.SendMessage(m.Chat.ID, "👋 Приветствую! Я — ваш бот для получения свежих новостей с инвестиционных сайтов 📈📰.\n\n"+
+			"⚡ Чтобы узнать все возможности и как пользоваться ботом, отправьте команду\n"+
+			"👉 /help\n\n"+
+			"Держите руку на пульсе финансового мира вместе со мной! 🚀💰")
+	case txt == "/help":
+		helpText := "/start - запустить бота\n" +
+			"/latest - последние новости\n" +
+			"/help - список команд\n" +
+			"/addsource <URL> - добавить источник (админ)\n" +
+			"/removesource <URL> - удалить источник (админ)\n" +
+			"/listsources - показать все источники (админ)"
+		b.SendMessage(m.Chat.ID, helpText)
+	case txt == "/latest":
+		limit := 5
+		items, err := storage.GetUnreadNews(b.db, m.Chat.ID, limit)
+		if err != nil {
+			b.SendMessage(m.Chat.ID, "⚠️ Не удалось загрузить новости из базы данных.")
+			log.Printf("GetUnreadNews error: %v", err)
+			return
+		}
+		if len(items) == 0 {
+			b.SendMessage(m.Chat.ID, "🚫 Сейчас в базе нет свежих новостей для вас.")
+			return
+		}
+
+		var sb strings.Builder
+		count := 0
+		for _, item := range items {
+			if b.Sent[item.Link] {
+				continue // уже отправили за время работы бота
+			}
+
+			sb.Reset()
+			sb.WriteString(fmt.Sprintf("📌 %s\n🕒 %s\n🔗 %s\n\n",
+				item.Title,
+				item.PubDate,
+				item.Link))
+
+			err = b.SendMessage(m.Chat.ID, sb.String())
+			if err != nil {
+				log.Printf("SendMessage error: %v", err)
+				continue
+			}
+
+			// Отмечаем новость как прочитанную для этого пользователя
+			if err := storage.MarkNewsAsRead(b.db, m.Chat.ID, item.Link); err != nil {
+				log.Printf("MarkNewsAsRead error: %v", err)
+			}
+
+			b.Sent[item.Link] = true
+			count++
+		}
+		if count == 0 {
+			b.SendMessage(m.Chat.ID, "🚫 Пока нет новых новостей для отправки.")
+			return
+		}
+    // Можно отправить итоговое сообщение или оставить пустым
+	case strings.HasPrefix(txt, "/addsource"):
+		// обработка команды добавления источника (админ)
+	case strings.HasPrefix(txt, "/removesource"):
+		// обработка команды удаления источника (админ)
+	case txt == "/listsources":
+		// показ всех источников (админ)
+	default:
+		log.Printf("Got message: %s", txt)
+	}
 }
