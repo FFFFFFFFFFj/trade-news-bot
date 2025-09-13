@@ -111,7 +111,7 @@ func GetAllSources(db *sql.DB) ([]string, error) {
 }
 
 func AddSource(db *sql.DB, url string) error {
-	_, err := db.Exec("INSERT INTO rss_sources(url) VALUES($1) ON CONFLICT DO NOTHING", url)
+	_, err := db.Exec("INSERT INTO rss_sources(url, owner_telegram_id) VALUES($1, $2) ON CONFLICT DO NOTHING", url, ownerTelegramID)
 	return err
 }
 
