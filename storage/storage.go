@@ -37,8 +37,7 @@ func Migrate(db *sql.DB) error {
 	queries := []string{
 		`CREATE TABLE IF NOT EXISTS rss_sources (
 			id SERIAL PRIMARY KEY,
-			url TEXT UNIQUE NOT NULL,
-			owner_telegram_id BIGINT NOT NULL
+			url TEXT UNIQUE NOT NULL
 		);`,
 		`CREATE TABLE IF NOT EXISTS news (
 			id SERIAL PRIMARY KEY,
