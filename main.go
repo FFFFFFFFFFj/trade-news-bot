@@ -28,23 +28,15 @@ func main() {
 
 	b := bot.New(token, db)
 
-	// News sources
-	sources := []string{
-		"https://www.finmarket.ru/rss/main.asp",
-		"https://www.finmarket.ru/rss/ecworld.asp",
-		"https://www.finmarket.ru/rss/finances.asp",
-		"https://www.bfm.ru/rss/news.xml",
-		"https://rssexport.rbc.ru/rbcnews/economics/full.rss",
-		"https://rssexport.rbc.ru/rbcnews/finance/full.rss",
-		"https://rssexport.rbc.ru/rbcnews/business/full.rss",
-		"https://www.interfax.ru/rss.asp",
-		"https://tass.ru/rss/v2/economy.xml",
-		"https://ru.investing.com/rss/news.rss",
-		"https://ru.investing.com/rss/forex.rss",
-		"https://ru.investing.com/rss/cryptocurrency.rss",
+	// We get sources from the database
+	sources, err := storage.GetAllSources(db)
+	if err != nil {
+		log.Fatalf("Failed to get sources: %v", err)
+	}
+	if len(sources) == 0 {
+		log.Fatal("No RSS sources found in database. Add sources before starting the bot.")
 	}
 
-	// Run background news update (every 10 minutes)
 	b.StartNewsUpdater(sources, 10*time.Minute)
 
 	b.Start()
