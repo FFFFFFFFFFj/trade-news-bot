@@ -92,4 +92,30 @@ func GetLatestNews(db *sql.DB, limit int) ([]rss.Item, error) {
 	}
 	return items, nil
 }
- 
+
+func GetAllSources(db *sql.DB) ([]string, error) {
+	rows, err := db.Query("SELECT url FROM rss_sources")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var sources []string
+	for rows.Next() {
+		var url string
+		if err := rows.Scan(&url); err != nil {
+			return nil, err
+		}
+		sources = append(sources, url)
+	}
+	return sources, nil
+}
+
+func AddSource(db *sql.DB, url string) error {
+	_, err := db.Exec("INSERT INTO rss_sources(url) VALUES($1) ON CONFLICT DO NOTHING", url)
+	return err
+}
+
+func RemoveSource(db *sql.DB, url string) error {
+	_, err := db.Exec("DELETE FROM rss_sources WHERE url = $1", url)
+	return err
+}
