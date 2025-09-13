@@ -110,7 +110,7 @@ func GetAllSources(db *sql.DB) ([]string, error) {
 	return sources, nil
 }
 
-func AddSource(db *sql.DB, url string) error {
+func AddSource(db *sql.DB, url string, ownerTelegramID int64) error {
 	_, err := db.Exec("INSERT INTO rss_sources(url, owner_telegram_id) VALUES($1, $2) ON CONFLICT DO NOTHING", url, ownerTelegramID)
 	return err
 }
