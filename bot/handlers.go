@@ -5,7 +5,7 @@ import (
 	"log"
 	"strings"
 
-	"github.com/FFFFFFFFFFj/trade-news-bot/rss"
+	//"github.com/FFFFFFFFFFj/trade-news-bot/rss"
 	"github.com/FFFFFFFFFFj/trade-news-bot/storage"
 )
 
