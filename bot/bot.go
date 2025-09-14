@@ -14,8 +14,7 @@ import (
 type Bot struct {
 	Token   string
 	APIBase string
-	Sent    map[string]bool // кэш отправленных ссылок (для одного запуска)
-	db      *sql.DB         // подключение к базе
+	db      *sql.DB
 }
 
 var AdminIDs = map[int64]bool{
@@ -30,7 +29,6 @@ func New(token string, db *sql.DB) *Bot {
 	return &Bot{
 		Token:   token,
 		APIBase: "https://api.telegram.org/bot" + token + "/",
-		Sent:    make(map[string]bool),
 		db:      db,
 	}
 }
@@ -78,7 +76,6 @@ func (b *Bot) StartNewsUpdater(sources []string, interval time.Duration) {
 	}()
 }
 
-// Обработка сообщений
 func (b *Bot) HandleMessage(m *Message) {
 	txt := strings.TrimSpace(m.Text)
 	switch {
@@ -104,48 +101,27 @@ func (b *Bot) HandleMessage(m *Message) {
 			return
 		}
 		if len(items) == 0 {
-			b.SendMessage(m.Chat.ID, "🚫 Сейчас в базе нет свежих новостей для вас.")
+			b.SendMessage(m.Chat.ID, "🚫 Сейчас нет новых новостей для вас.")
 			return
 		}
-
-		var sb strings.Builder
-		count := 0
 		for _, item := range items {
-			if b.Sent[item.Link] {
-				continue // уже отправили за время работы бота
-			}
-
-			sb.Reset()
-			sb.WriteString(fmt.Sprintf("📌 %s\n🕒 %s\n🔗 %s\n\n",
-				item.Title,
-				item.PubDate,
-				item.Link))
-
-			err = b.SendMessage(m.Chat.ID, sb.String())
+			msg := fmt.Sprintf("📌 %s\n🕒 %s\n🔗 %s\n\n", item.Title, item.PubDate, item.Link)
+			err = b.SendMessage(m.Chat.ID, msg)
 			if err != nil {
 				log.Printf("SendMessage error: %v", err)
 				continue
 			}
-
-			// Отмечаем новость как прочитанную для этого пользователя
-			if err := storage.MarkNewsAsRead(b.db, m.Chat.ID, item.Link); err != nil {
+			err = storage.MarkNewsAsRead(b.db, m.Chat.ID, item.Link)
+			if err != nil {
 				log.Printf("MarkNewsAsRead error: %v", err)
 			}
-
-			b.Sent[item.Link] = true
-			count++
 		}
-		if count == 0 {
-			b.SendMessage(m.Chat.ID, "🚫 Пока нет новых новостей для отправки.")
-			return
-		}
-    // Можно отправить итоговое сообщение или оставить пустым
 	case strings.HasPrefix(txt, "/addsource"):
-		// обработка команды добавления источника (админ)
+		// администрация: добавление источника
 	case strings.HasPrefix(txt, "/removesource"):
-		// обработка команды удаления источника (админ)
+		// администрация: удаление источника
 	case txt == "/listsources":
-		// показ всех источников (админ)
+		// администрация: список источников
 	default:
 		log.Printf("Got message: %s", txt)
 	}
