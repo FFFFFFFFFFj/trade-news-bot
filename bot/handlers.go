@@ -42,14 +42,10 @@ func (b *Bot) HandleMessage(m *Message) {
 		var sb strings.Builder
 		count := 0
 		for _, item := range items {
-			if b.Sent[item.Link] {
-				continue // уже отправили
-			}
 			sb.WriteString(fmt.Sprintf("📌 %s\n🕒 %s\n🔗 %s\n\n",
 				item.Title,
 				item.PubDate,
 				item.Link))
-			b.Sent[item.Link] = true
 			count++
 		}
 		if count == 0 {

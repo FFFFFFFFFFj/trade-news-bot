@@ -13,12 +13,11 @@ import (
 type Bot struct {
 	Token   string
 	APIBase string
-	Sent    map[string]bool // cache of sent links
 	db      *sql.DB         // connection to the database
 }
 
 var AdminIDs = map[int64]bool{
-	839986298: true
+	839986298: true,
 }
 
 func (b *Bot) IsAdmin(userID int64) bool {
@@ -29,7 +28,7 @@ func New(token string, db *sql.DB) *Bot {
 	return &Bot{
 		Token:   token,
 		APIBase: "https://api.telegram.org/bot" + token + "/",
-		Sent:    make(map[string]bool),
+		//Sent:    make(map[string]bool),
 		db:      db,
 	}
 }
