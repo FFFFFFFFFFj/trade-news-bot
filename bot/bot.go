@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/FFFFFFFFFFj/trade-news-bot/rss"
 	"github.com/FFFFFFFFFFj/trade-news-bot/storage"
 )
 
