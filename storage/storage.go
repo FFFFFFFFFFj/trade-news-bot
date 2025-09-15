@@ -32,7 +32,8 @@ func Migrate(db *sql.DB) error {
 	queries := []string{
 		`CREATE TABLE IF NOT EXISTS rss_sources (
 			id SERIAL PRIMARY KEY,
-			url TEXT UNIQUE NOT NULL
+			url TEXT UNIQUE NOT NULL,
+			owner_telegram_id BIGINT
 		);`,
 		`CREATE TABLE IF NOT EXISTS news (
 			id SERIAL PRIMARY KEY,
@@ -46,7 +47,13 @@ func Migrate(db *sql.DB) error {
 			news_id INT NOT NULL,
 			read_at TIMESTAMP NOT NULL DEFAULT NOW(),
 			PRIMARY KEY (user_id, news_id),
-			FOREIGN KEY (news_id) REFERENCES news(id)
+			FOREIGN KEY (news_id) REFERENCES news(id) ON DELETE CASCADE
+		);`,
+		`CREATE TABLE IF NOT EXISTS user_subscriptions (
+			user_id BIGINT NOT NULL,
+			source_id INT NOT NULL,
+			PRIMARY KEY (user_id, source_id),
+			FOREIGN KEY (source_id) REFERENCES rss_sources(id) ON DELETE CASCADE
 		);`,
 	}
 	for _, query := range queries {
