@@ -35,8 +35,30 @@ func (b *Bot) Start() {
 		for _, u := range updates {
 			offset = u.UpdateID + 1
 			if u.Message != nil {
-				b.HandleMessage(u.Message) // Вызов метода из bot/handlers.go
+				b.HandleMessage(u.Message) // Вызов метода из handlers.go
 			}
 		}
 	}
+}
+
+// Метод обновления новостей — его нужно в bot/bot.go, не удаляйте
+func (b *Bot) StartNewsUpdater(sources []string, interval time.Duration) {
+	go func() {
+		for {
+			for _, sourceURL := range sources {
+				items, err := storage.Fetch(sourceURL)
+				if err != nil {
+					log.Printf("RSS fetch error (%s): %v", sourceURL, err)
+					continue
+				}
+				for _, item := range items {
+					err = storage.SaveNews(b.db, item, sourceURL)
+					if err != nil {
+						log.Printf("SaveNews error: %v", err)
+					}
+				}
+			}
+			time.Sleep(interval)
+		}
+	}()
 }
