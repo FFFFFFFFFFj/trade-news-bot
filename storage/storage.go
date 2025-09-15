@@ -271,3 +271,17 @@ func GetRecentNewsForUser(db *sql.DB, userID int64, since time.Time) ([]rss.Item
 	}
 	return items, nil
 }
+
+// GetUserSubscriptionCount возвращает количество подписок пользователя
+func GetUserSubscriptionCount(db *sql.DB, userID int64) (int, error) {
+	var count int
+	err := db.QueryRow("SELECT COUNT(*) FROM user_subscriptions WHERE user_id = $1", userID).Scan(&count)
+	return count, err
+}
+
+// GetActiveUsersCount возвращает количество пользователей, у которых есть хотя бы одна подписка
+func GetActiveUsersCount(db *sql.DB) (int, error) {
+	var count int
+	err := db.QueryRow("SELECT COUNT(DISTINCT user_id) FROM user_subscriptions").Scan(&count)
+	return count, err
+}
