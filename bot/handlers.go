@@ -24,13 +24,20 @@ func (b *Bot) HandleMessage(m *Message) {
 			"⚡ Чтобы узнать все возможности и как пользоваться ботом, отправьте команду\n"+
 			"👉 /help\n\n"+
 			"Держите руку на пульсе финансового мира вместе со мной! 🚀💰")
+
 	case txt == "/help":
 		helpText := "/start - запустить бота\n" +
-			"/latest - последние новости\n" +
-			"/help - список команд\n" +
-			"/addsource <URL> - добавить источник (админ)\n" +
-			"/removesource <URL> - удалить источник (админ)\n" +
-			"/listsources - показать все источники (админ)"
+			"/latest - последние новости (некоторые могут быть помечены прочитанными)\n" +
+			"/subscribe <URL> - подписаться на источник\n" +
+			"/unsubscribe <URL> - отписаться от источника\n" +
+			"/mysources - показать мои подписки\n"
+
+		if b.IsAdmin(m.Chat.ID) {
+			helpText += "\n(Админ команды)\n" +
+				"/addsource <URL>\n" +
+				"/removesource <URL>\n" +
+				"/listsources"
+		}
 		b.SendMessage(m.Chat.ID, helpText)
 
 	case txt == "/latest":
@@ -42,7 +49,7 @@ func (b *Bot) HandleMessage(m *Message) {
 			return
 		}
 		if len(items) == 0 {
-			b.SendMessage(m.Chat.ID, "🚫 Сейчас нет новых новостей для вас.")
+			b.SendMessage(m.Chat.ID, "🚫 Сейчас нет новых непрочитанных новостей для вас.")
 			return
 		}
 		for _, item := range items {
@@ -112,6 +119,50 @@ func (b *Bot) HandleMessage(m *Message) {
 			return
 		}
 		b.SendMessage(m.Chat.ID, "Источники новостей:\n"+strings.Join(sources, "\n"))
+
+	// --- подписки для пользователей ---
+	case strings.HasPrefix(txt, "/subscribe"):
+		parts := strings.Fields(txt)
+		if len(parts) < 2 {
+			b.SendMessage(m.Chat.ID, "Использование: /subscribe <URL>")
+			return
+		}
+		url := parts[1]
+		err := storage.Subscribe(b.db, m.Chat.ID, url)
+		if err != nil {
+			b.SendMessage(m.Chat.ID, "Ошибка при подписке: источник не найден или внутренняя ошибка.")
+			log.Printf("Subscribe error for %d: %v", m.Chat.ID, err)
+			return
+		}
+		b.SendMessage(m.Chat.ID, "Вы подписаны на источник.")
+
+	case strings.HasPrefix(txt, "/unsubscribe"):
+		parts := strings.Fields(txt)
+		if len(parts) < 2 {
+			b.SendMessage(m.Chat.ID, "Использование: /unsubscribe <URL>")
+			return
+		}
+		url := parts[1]
+		err := storage.Unsubscribe(b.db, m.Chat.ID, url)
+		if err != nil {
+			b.SendMessage(m.Chat.ID, "Ошибка при отписке: источник не найден или внутренняя ошибка.")
+			log.Printf("Unsubscribe error for %d: %v", m.Chat.ID, err)
+			return
+		}
+		b.SendMessage(m.Chat.ID, "Вы отписались от источника.")
+
+	case txt == "/mysources":
+		urls, err := storage.GetUserSources(b.db, m.Chat.ID)
+		if err != nil {
+			b.SendMessage(m.Chat.ID, "Ошибка при получении ваших подписок.")
+			log.Printf("GetUserSources error for %d: %v", m.Chat.ID, err)
+			return
+		}
+		if len(urls) == 0 {
+			b.SendMessage(m.Chat.ID, "У вас пока нет подписок.")
+			return
+		}
+		b.SendMessage(m.Chat.ID, "Ваши подписки:\n"+strings.Join(urls, "\n"))
 
 	default:
 		log.Printf("Got message: %s", txt)
