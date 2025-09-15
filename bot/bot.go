@@ -1,9 +1,15 @@
 package bot
 
+package bot
+
 import (
 	"database/sql"
 	"log"
 	"strings"
+	"time"
+
+	"github.com/FFFFFFFFFFj/trade-news-bot/storage"
+	"github.com/FFFFFFFFFFj/trade-news-bot/rss"
 )
 
 type Bot struct {
