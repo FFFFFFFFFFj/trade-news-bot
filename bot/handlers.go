@@ -5,19 +5,25 @@ import (
 	"log"
 	"strings"
 
-	//"github.com/FFFFFFFFFFj/trade-news-bot/rss"
 	"github.com/FFFFFFFFFFj/trade-news-bot/storage"
 )
+
+var AdminIDs = map[int64]bool{
+	839986298: true,
+}
+
+func (b *Bot) IsAdmin(userID int64) bool {
+	return AdminIDs[userID]
+}
 
 func (b *Bot) HandleMessage(m *Message) {
 	txt := strings.TrimSpace(m.Text)
 	switch {
 	case txt == "/start":
-		b.SendMessage(m.Chat.ID, "👋 Приветствую! Я — ваш бот для получения свежих новостей с инвестиционных сайтов 📈📰.\n\n"+
+		b.SendMessage(m.Chat.ID, "👋 Приветствую! Я — ваш бот для получения свежих новостей 📈📰.\n\n"+
 			"⚡ Чтобы узнать все возможности и как пользоваться ботом, отправьте команду\n"+
 			"👉 /help\n\n"+
 			"Держите руку на пульсе финансового мира вместе со мной! 🚀💰")
-
 	case txt == "/help":
 		helpText := "/start - запустить бота\n" +
 			"/latest - последние новости\n" +
@@ -26,34 +32,30 @@ func (b *Bot) HandleMessage(m *Message) {
 			"/removesource <URL> - удалить источник (админ)\n" +
 			"/listsources - показать все источники (админ)"
 		b.SendMessage(m.Chat.ID, helpText)
-
 	case txt == "/latest":
 		limit := 5
-		items, err := storage.GetLatestNews(b.db, limit)
+		items, err := storage.GetUnreadNews(b.db, m.Chat.ID, limit)
 		if err != nil {
 			b.SendMessage(m.Chat.ID, "⚠️ Не удалось загрузить новости из базы данных.")
-			log.Printf("GetLatestNews error: %v", err)
+			log.Printf("GetUnreadNews error: %v", err)
 			return
 		}
 		if len(items) == 0 {
-			b.SendMessage(m.Chat.ID, "🚫 Сейчас в базе нет свежих новостей.")
+			b.SendMessage(m.Chat.ID, "🚫 Сейчас нет новых новостей для вас.")
 			return
 		}
-		var sb strings.Builder
-		count := 0
 		for _, item := range items {
-			sb.WriteString(fmt.Sprintf("📌 %s\n🕒 %s\n🔗 %s\n\n",
-				item.Title,
-				item.PubDate,
-				item.Link))
-			count++
+			msg := fmt.Sprintf("📌 %s\n🕒 %s\n🔗 %s\n\n", item.Title, item.PubDate, item.Link)
+			err = b.SendMessage(m.Chat.ID, msg)
+			if err != nil {
+				log.Printf("SendMessage error: %v", err)
+				continue
+			}
+			err = storage.MarkNewsAsRead(b.db, m.Chat.ID, item.Link)
+			if err != nil {
+				log.Printf("MarkNewsAsRead error: %v", err)
+			}
 		}
-		if count == 0 {
-			b.SendMessage(m.Chat.ID, "🚫 Пока нет новых новостей для отправки.")
-			return
-		}
-		b.SendMessage(m.Chat.ID, sb.String())
-
 	case strings.HasPrefix(txt, "/addsource"):
 		if !b.IsAdmin(m.Chat.ID) {
 			b.SendMessage(m.Chat.ID, "🚫 Команда доступна только администраторам.")
@@ -65,14 +67,13 @@ func (b *Bot) HandleMessage(m *Message) {
 			return
 		}
 		url := parts[1]
-		err := storage.AddSource(b.db, url, 839986298)
+		err := storage.AddSource(b.db, url, m.Chat.ID)
 		if err != nil {
 			b.SendMessage(m.Chat.ID, "Ошибка при добавлении источника.")
 			log.Printf("AddSource error: %v", err)
 			return
 		}
 		b.SendMessage(m.Chat.ID, "Источник успешно добавлен.")
-
 	case strings.HasPrefix(txt, "/removesource"):
 		if !b.IsAdmin(m.Chat.ID) {
 			b.SendMessage(m.Chat.ID, "🚫 Команда доступна только администраторам.")
@@ -91,7 +92,6 @@ func (b *Bot) HandleMessage(m *Message) {
 			return
 		}
 		b.SendMessage(m.Chat.ID, "Источник успешно удалён.")
-
 	case txt == "/listsources":
 		if !b.IsAdmin(m.Chat.ID) {
 			b.SendMessage(m.Chat.ID, "🚫 Команда доступна только администраторам.")
@@ -108,7 +108,6 @@ func (b *Bot) HandleMessage(m *Message) {
 			return
 		}
 		b.SendMessage(m.Chat.ID, "Источники новостей:\n"+strings.Join(sources, "\n"))
-
 	default:
 		log.Printf("Got message: %s", txt)
 	}
