@@ -1,7 +1,5 @@
 package bot
 
-package bot
-
 import (
 	"database/sql"
 	"log"
@@ -12,12 +10,14 @@ import (
 	"github.com/FFFFFFFFFFj/trade-news-bot/rss"
 )
 
+// Bot представляет структуру Telegram-бота
 type Bot struct {
 	Token   string
 	APIBase string
 	db      *sql.DB
 }
 
+// New создает и возвращает новый экземпляр бота
 func New(token string, db *sql.DB) *Bot {
 	return &Bot{
 		Token:   token,
@@ -26,6 +26,7 @@ func New(token string, db *sql.DB) *Bot {
 	}
 }
 
+// Start запускает цикл получения обновлений от Telegram
 func (b *Bot) Start() {
 	log.Println("Bot started ...")
 	var offset int
@@ -36,30 +37,30 @@ func (b *Bot) Start() {
 				continue
 			}
 			log.Printf("getUpdates error: %v", err)
+			time.Sleep(3 * time.Second)
 			continue
 		}
 		for _, u := range updates {
 			offset = u.UpdateID + 1
 			if u.Message != nil {
-				b.HandleMessage(u.Message) // Вызов метода из handlers.go
+				b.HandleMessage(u.Message)
 			}
 		}
 	}
 }
 
-// Метод обновления новостей — его нужно в bot/bot.go, не удаляйте
+// StartNewsUpdater запускает периодическое обновление новостей
 func (b *Bot) StartNewsUpdater(sources []string, interval time.Duration) {
 	go func() {
 		for {
 			for _, sourceURL := range sources {
-				items, err := storage.Fetch(sourceURL)
+				items, err := rss.Fetch(sourceURL)
 				if err != nil {
 					log.Printf("RSS fetch error (%s): %v", sourceURL, err)
 					continue
 				}
 				for _, item := range items {
-					err = storage.SaveNews(b.db, item, sourceURL)
-					if err != nil {
+					if err := storage.SaveNews(b.db, item, sourceURL); err != nil {
 						log.Printf("SaveNews error: %v", err)
 					}
 				}
@@ -67,4 +68,18 @@ func (b *Bot) StartNewsUpdater(sources []string, interval time.Duration) {
 			time.Sleep(interval)
 		}
 	}()
+}
+
+// GetUpdates получает обновления от Telegram
+func (b *Bot) GetUpdates(offset, timeout int) ([]Update, error) {
+	// Реализация запроса получения обновлений через Telegram API (ваша или примерная)
+	// ...
+	return nil, nil
+}
+
+// SendMessage отправляет сообщение пользователю
+func (b *Bot) SendMessage(chatID int64, text string) error {
+	// Реализация отправки сообщения через Telegram API (ваша или примерная)
+	// ...
+	return nil
 }
