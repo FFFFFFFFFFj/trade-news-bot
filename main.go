@@ -1,10 +1,9 @@
 package main
-//
+
 import (
 	"log"
 	"os"
 	"time"
-
 	"github.com/FFFFFFFFFFj/trade-news-bot/bot"
 	"github.com/FFFFFFFFFFj/trade-news-bot/storage"
 )
@@ -28,7 +27,6 @@ func main() {
 
 	b := bot.New(token, db)
 
-	// We get sources from the database
 	sources, err := storage.GetAllSources(db)
 	if err != nil {
 		log.Fatalf("Failed to get sources: %v", err)
@@ -37,7 +35,6 @@ func main() {
 		log.Fatal("No RSS sources found in database. Add sources before starting the bot.")
 	}
 
-	b.StartNewsUpdater(sources, 10*time.Minute)
-
+	go b.StartNewsUpdater(sources, 10*time.Minute)
 	b.Start()
 }
