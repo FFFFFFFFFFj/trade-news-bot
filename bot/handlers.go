@@ -32,6 +32,7 @@ func (b *Bot) HandleMessage(m *Message) {
 			"/removesource <URL> - удалить источник (админ)\n" +
 			"/listsources - показать все источники (админ)"
 		b.SendMessage(m.Chat.ID, helpText)
+
 	case txt == "/latest":
 		limit := 5
 		items, err := storage.GetUnreadNews(b.db, m.Chat.ID, limit)
@@ -56,6 +57,7 @@ func (b *Bot) HandleMessage(m *Message) {
 				log.Printf("MarkNewsAsRead error: %v", err)
 			}
 		}
+
 	case strings.HasPrefix(txt, "/addsource"):
 		if !b.IsAdmin(m.Chat.ID) {
 			b.SendMessage(m.Chat.ID, "🚫 Команда доступна только администраторам.")
@@ -74,6 +76,7 @@ func (b *Bot) HandleMessage(m *Message) {
 			return
 		}
 		b.SendMessage(m.Chat.ID, "Источник успешно добавлен.")
+
 	case strings.HasPrefix(txt, "/removesource"):
 		if !b.IsAdmin(m.Chat.ID) {
 			b.SendMessage(m.Chat.ID, "🚫 Команда доступна только администраторам.")
@@ -92,6 +95,7 @@ func (b *Bot) HandleMessage(m *Message) {
 			return
 		}
 		b.SendMessage(m.Chat.ID, "Источник успешно удалён.")
+
 	case txt == "/listsources":
 		if !b.IsAdmin(m.Chat.ID) {
 			b.SendMessage(m.Chat.ID, "🚫 Команда доступна только администраторам.")
@@ -108,6 +112,7 @@ func (b *Bot) HandleMessage(m *Message) {
 			return
 		}
 		b.SendMessage(m.Chat.ID, "Источники новостей:\n"+strings.Join(sources, "\n"))
+
 	default:
 		log.Printf("Got message: %s", txt)
 	}
