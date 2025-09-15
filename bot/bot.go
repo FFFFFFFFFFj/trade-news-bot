@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync"
 	"time"
 
-	"github.com/FFFFFFFFFFj/trade-news-bot/storage"
 	"github.com/FFFFFFFFFFj/trade-news-bot/rss"
+	"github.com/FFFFFFFFFFj/trade-news-bot/storage"
 )
 
 // Bot представляет структуру Telegram-бота
@@ -16,18 +17,43 @@ type Bot struct {
 	Token   string
 	APIBase string
 	db      *sql.DB
+
+	// pendingActions хранит состояние ожидания ввода URL после команды /addsource или /removesource
+	pendingMutex   sync.Mutex
+	pendingActions map[int64]string // map[telegramUserID]actionName
 }
 
 // New создает и возвращает новый экземпляр бота
 func New(token string, db *sql.DB) *Bot {
 	return &Bot{
-		Token:   token,
-		APIBase: "https://api.telegram.org/bot" + token + "/",
-		db:      db,
+		Token:          token,
+		APIBase:        "https://api.telegram.org/bot" + token + "/",
+		db:             db,
+		pendingActions: make(map[int64]string),
 	}
 }
 
-// Start запускает цикл получения обновлений от Telegram
+// Вспомогательные методы для pending
+func (b *Bot) setPending(userID int64, action string) {
+	b.pendingMutex.Lock()
+	b.pendingActions[userID] = action
+	b.pendingMutex.Unlock()
+}
+
+func (b *Bot) getPending(userID int64) (string, bool) {
+	b.pendingMutex.Lock()
+	act, ok := b.pendingActions[userID]
+	b.pendingMutex.Unlock()
+	return act, ok
+}
+
+func (b *Bot) clearPending(userID int64) {
+	b.pendingMutex.Lock()
+	delete(b.pendingActions, userID)
+	b.pendingMutex.Unlock()
+}
+
+// Start запускает цикл получения обновлений от Telegram (не меняем)
 func (b *Bot) Start() {
 	log.Println("Bot started ...")
 	var offset int
@@ -50,10 +76,22 @@ func (b *Bot) Start() {
 	}
 }
 
-// StartNewsUpdater запускает периодическое обновление новостей
-func (b *Bot) StartNewsUpdater(sources []string, interval time.Duration) {
+// StartNewsUpdater теперь динамически запрашивает список источников из БД каждый цикл.
+// interval — интервал между циклами (например, 10*time.Minute)
+func (b *Bot) StartNewsUpdater(interval time.Duration) {
 	go func() {
 		for {
+			sources, err := storage.GetAllSources(b.db)
+			if err != nil {
+				log.Printf("Failed to get sources: %v", err)
+				time.Sleep(1 * time.Minute)
+				continue
+			}
+			if len(sources) == 0 {
+				// если нет источников — ждём и пробуем снова
+				time.Sleep(interval)
+				continue
+			}
 			for _, sourceURL := range sources {
 				items, err := rss.Fetch(sourceURL)
 				if err != nil {
@@ -70,6 +108,7 @@ func (b *Bot) StartNewsUpdater(sources []string, interval time.Duration) {
 		}
 	}()
 }
+
 
 // StartBroadcastScheduler запускает рассылки в заданные часы (в локальном времени сервера).
 // schedule - список строк в формате "HH:MM" (например: []string{"09:00","15:00","21:00"})
