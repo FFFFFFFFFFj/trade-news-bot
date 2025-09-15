@@ -1,4 +1,4 @@
-package bot
+ppackage bot
 
 import (
 	"database/sql"
@@ -68,18 +68,4 @@ func (b *Bot) StartNewsUpdater(sources []string, interval time.Duration) {
 			time.Sleep(interval)
 		}
 	}()
-}
-
-// GetUpdates получает обновления от Telegram
-func (b *Bot) GetUpdates(offset, timeout int) ([]Update, error) {
-	// Реализация запроса получения обновлений через Telegram API (ваша или примерная)
-	// ...
-	return nil, nil
-}
-
-// SendMessage отправляет сообщение пользователю
-func (b *Bot) SendMessage(chatID int64, text string) error {
-	// Реализация отправки сообщения через Telegram API (ваша или примерная)
-	// ...
-	return nil
 }
