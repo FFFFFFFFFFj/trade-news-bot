@@ -1,11 +1,11 @@
 package bot
 
 import (
+	"database/sql"
 	"fmt"
 	"log"
 	"strings"
 	"time"
-	"database/sql"
 
 	"github.com/FFFFFFFFFFj/trade-news-bot/rss"
 	"github.com/FFFFFFFFFFj/trade-news-bot/storage"
@@ -14,11 +14,7 @@ import (
 type Bot struct {
 	Token   string
 	APIBase string
-<<<<<<< HEAD
-	db      *sql.DB         // connection to the database
-=======
 	db      *sql.DB
->>>>>>> 6219d7a2600baa98ea5852ec881a8c0df3f0af80
 }
 
 var AdminIDs = map[int64]bool{
@@ -33,10 +29,6 @@ func New(token string, db *sql.DB) *Bot {
 	return &Bot{
 		Token:   token,
 		APIBase: "https://api.telegram.org/bot" + token + "/",
-<<<<<<< HEAD
-		//Sent:    make(map[string]bool),
-=======
->>>>>>> 6219d7a2600baa98ea5852ec881a8c0df3f0af80
 		db:      db,
 	}
 }
@@ -125,11 +117,57 @@ func (b *Bot) HandleMessage(m *Message) {
 			}
 		}
 	case strings.HasPrefix(txt, "/addsource"):
-		// администрация: добавление источника
+		if !b.IsAdmin(m.Chat.ID) {
+			b.SendMessage(m.Chat.ID, "🚫 Команда доступна только администраторам.")
+			return
+		}
+		parts := strings.Fields(txt)
+		if len(parts) < 2 {
+			b.SendMessage(m.Chat.ID, "Использование: /addsource <URL>")
+			return
+		}
+		url := parts[1]
+		err := storage.AddSource(b.db, url, m.Chat.ID)
+		if err != nil {
+			b.SendMessage(m.Chat.ID, "Ошибка при добавлении источника.")
+			log.Printf("AddSource error: %v", err)
+			return
+		}
+		b.SendMessage(m.Chat.ID, "Источник успешно добавлен.")
 	case strings.HasPrefix(txt, "/removesource"):
-		// администрация: удаление источника
+		if !b.IsAdmin(m.Chat.ID) {
+			b.SendMessage(m.Chat.ID, "🚫 Команда доступна только администраторам.")
+			return
+		}
+		parts := strings.Fields(txt)
+		if len(parts) < 2 {
+			b.SendMessage(m.Chat.ID, "Использование: /removesource <URL>")
+			return
+		}
+		url := parts[1]
+		err := storage.RemoveSource(b.db, url)
+		if err != nil {
+			b.SendMessage(m.Chat.ID, "Ошибка при удалении источника.")
+			log.Printf("RemoveSource error: %v", err)
+			return
+		}
+		b.SendMessage(m.Chat.ID, "Источник успешно удалён.")
 	case txt == "/listsources":
-		// администрация: список источников
+		if !b.IsAdmin(m.Chat.ID) {
+			b.SendMessage(m.Chat.ID, "🚫 Команда доступна только администраторам.")
+			return
+		}
+		sources, err := storage.GetAllSources(b.db)
+		if err != nil {
+			b.SendMessage(m.Chat.ID, "Ошибка при получении списка источников.")
+			log.Printf("GetAllSources error: %v", err)
+			return
+		}
+		if len(sources) == 0 {
+			b.SendMessage(m.Chat.ID, "Список источников пуст.")
+			return
+		}
+		b.SendMessage(m.Chat.ID, "Источники новостей:\n"+strings.Join(sources, "\n"))
 	default:
 		log.Printf("Got message: %s", txt)
 	}
