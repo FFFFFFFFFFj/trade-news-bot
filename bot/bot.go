@@ -55,27 +55,6 @@ func (b *Bot) Start() {
 	}
 }
 
-func (b *Bot) StartNewsUpdater(sources []string, interval time.Duration) {
-	go func() {
-		for {
-			for _, sourceURL := range sources {
-				items, err := rss.Fetch(sourceURL)
-				if err != nil {
-					log.Printf("RSS fetch error (%s): %v", sourceURL, err)
-					continue
-				}
-				for _, item := range items {
-					err = storage.SaveNews(b.db, item, sourceURL)
-					if err != nil {
-						log.Printf("SaveNews error: %v", err)
-					}
-				}
-			}
-			time.Sleep(interval)
-		}
-	}()
-}
-
 func (b *Bot) HandleMessage(m *Message) {
 	txt := strings.TrimSpace(m.Text)
 	switch {
