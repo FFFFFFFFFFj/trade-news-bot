@@ -66,6 +66,17 @@ func Migrate(db *sql.DB) error {
 }
 
 func SaveNews(db *sql.DB, item rss.Item, sourceURL string) error {
+	// Если pub_date пустой — вставляем NULL
+	if item.PubDate == "" {
+		query := `
+			INSERT INTO news (title, link, pub_date, source_url)
+			VALUES ($1, $2, NULL, $3)
+			ON CONFLICT (link) DO NOTHING;
+		`
+		_, err := db.Exec(query, item.Title, item.Link, sourceURL)
+		return err
+	}
+
 	query := `
 		INSERT INTO news (title, link, pub_date, source_url)
 		VALUES ($1, $2, $3, $4)
@@ -92,7 +103,8 @@ func GetLatestNews(db *sql.DB, limit int) ([]rss.Item, error) {
 	for rows.Next() {
 		var item rss.Item
 		var published string
-		err = rows.Scan(&item.Title, &item.Link, &published, new(string))
+		var sourceURL string
+		err = rows.Scan(&item.Title, &item.Link, &published, &sourceURL)
 		if err != nil {
 			return nil, err
 		}
@@ -168,4 +180,93 @@ func AddSource(db *sql.DB, url string, ownerTelegramID int64) error {
 func RemoveSource(db *sql.DB, url string) error {
 	_, err := db.Exec("DELETE FROM rss_sources WHERE url = $1", url)
 	return err
+}
+
+// Subscribe - подписать пользователя на источник (источник должен существовать в rss_sources)
+func Subscribe(db *sql.DB, userID int64, url string) error {
+	var sourceID int
+	err := db.QueryRow("SELECT id FROM rss_sources WHERE url = $1", url).Scan(&sourceID)
+	if err != nil {
+		return fmt.Errorf("source not found")
+	}
+	_, err = db.Exec("INSERT INTO user_subscriptions(user_id, source_id) VALUES($1, $2) ON CONFLICT DO NOTHING", userID, sourceID)
+	return err
+}
+
+func Unsubscribe(db *sql.DB, userID int64, url string) error {
+	var sourceID int
+	err := db.QueryRow("SELECT id FROM rss_sources WHERE url = $1", url).Scan(&sourceID)
+	if err != nil {
+		return fmt.Errorf("source not found")
+	}
+	_, err = db.Exec("DELETE FROM user_subscriptions WHERE user_id=$1 AND source_id=$2", userID, sourceID)
+	return err
+}
+
+func GetUserSources(db *sql.DB, userID int64) ([]string, error) {
+	rows, err := db.Query(`
+		SELECT s.url FROM rss_sources s
+		INNER JOIN user_subscriptions us ON s.id = us.source_id
+		WHERE us.user_id = $1
+	`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var urls []string
+	for rows.Next() {
+		var url string
+		if err := rows.Scan(&url); err != nil {
+			return nil, err
+		}
+		urls = append(urls, url)
+	}
+	return urls, nil
+}
+
+// Возвращает всех пользователей, у которых есть хотя бы одна подписка
+func GetUsersWithSubscriptions(db *sql.DB) ([]int64, error) {
+	rows, err := db.Query("SELECT DISTINCT user_id FROM user_subscriptions")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var users []int64
+	for rows.Next() {
+		var uid int64
+		if err := rows.Scan(&uid); err != nil {
+			return nil, err
+		}
+		users = append(users, uid)
+	}
+	return users, nil
+}
+
+// GetRecentNewsForUser - последние новости для пользователя по его подпискам, после времени since
+func GetRecentNewsForUser(db *sql.DB, userID int64, since time.Time) ([]rss.Item, error) {
+	query := `
+		SELECT n.title, n.link, COALESCE(to_char(n.pub_date, 'YYYY-MM-DD HH24:MI:SS'), '')
+		FROM news n
+		JOIN rss_sources s ON n.source_url = s.url
+		JOIN user_subscriptions us ON us.source_id = s.id
+		WHERE us.user_id = $1 AND n.pub_date >= $2
+		ORDER BY n.pub_date DESC
+	`
+	rows, err := db.Query(query, userID, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var items []rss.Item
+	for rows.Next() {
+		var it rss.Item
+		var published string
+		if err := rows.Scan(&it.Title, &it.Link, &published); err != nil {
+			return nil, err
+		}
+		it.PubDate = published
+		items = append(items, it)
+	}
+	return items, nil
 }
