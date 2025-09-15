@@ -18,25 +18,84 @@ func (b *Bot) IsAdmin(userID int64) bool {
 
 func (b *Bot) HandleMessage(m *Message) {
 	txt := strings.TrimSpace(m.Text)
+
+	// 1) Если у пользователя есть ожидаемое действие (pending) и сообщение не команда — воспринимаем как URL
+	if action, ok := b.getPending(m.Chat.ID); ok && !strings.HasPrefix(txt, "/") {
+		switch action {
+		case "addsource":
+			// Добавление источника (только админ)
+			if !b.IsAdmin(m.Chat.ID) {
+				b.SendMessage(m.Chat.ID, "🚫 Команда доступна только администраторам.")
+				b.clearPending(m.Chat.ID)
+				return
+			}
+			err := storage.AddSource(b.db, txt, m.Chat.ID)
+			if err != nil {
+				b.SendMessage(m.Chat.ID, "Ошибка при добавлении источника.")
+				log.Printf("AddSource error: %v", err)
+			} else {
+				b.SendMessage(m.Chat.ID, "Источник успешно добавлен.")
+			}
+			b.clearPending(m.Chat.ID)
+			return
+
+		case "removesource":
+			// Удаление источника (только админ)
+			if !b.IsAdmin(m.Chat.ID) {
+				b.SendMessage(m.Chat.ID, "🚫 Команда доступна только администраторам.")
+				b.clearPending(m.Chat.ID)
+				return
+			}
+			err := storage.RemoveSource(b.db, txt)
+			if err != nil {
+				b.SendMessage(m.Chat.ID, "Ошибка при удалении источника.")
+				log.Printf("RemoveSource error: %v", err)
+			} else {
+				b.SendMessage(m.Chat.ID, "Источник успешно удалён.")
+			}
+			b.clearPending(m.Chat.ID)
+			return
+		default:
+			// неизвестное состояние — сброс
+			b.clearPending(m.Chat.ID)
+		}
+	}
+
+	// 2) Обработка обычных команд
 	switch {
 	case txt == "/start":
-		b.SendMessage(m.Chat.ID, "👋 Приветствую! Я — ваш бот для получения свежих новостей 📈📰.\n\n"+
-			"⚡ Чтобы узнать все возможности и как пользоваться ботом, отправьте команду\n"+
-			"👉 /help\n\n"+
-			"Держите руку на пульсе финансового мира вместе со мной! 🚀💰")
+		// Профиль — пользовательский или админский
+		subsCount, err := storage.GetUserSubscriptionCount(b.db, m.Chat.ID)
+		if err != nil {
+			log.Printf("GetUserSubscriptionCount error for %d: %v", m.Chat.ID, err)
+			subsCount = 0
+		}
+		if b.IsAdmin(m.Chat.ID) {
+			activeUsers, err := storage.GetActiveUsersCount(b.db)
+			if err != nil {
+				log.Printf("GetActiveUsersCount error: %v", err)
+				activeUsers = 0
+			}
+			msg := fmt.Sprintf("👑 Админ профиль\n🆔 Telegram ID: %d\n📊 Активных пользователей: %d\n\nАдмин команды:\n/addsource - добавить источник\n/removesource - удалить источник\n/listsources - показать все источники\n\nПубличные команды:\n/mysources - мои подписки\n/subscribe <URL> - подписаться\n/unsubscribe <URL> - отписаться\n/latest - последние новости\n/help - справка", m.Chat.ID, activeUsers)
+			b.SendMessage(m.Chat.ID, msg)
+		} else {
+			msg := fmt.Sprintf("👤 Ваш профиль\n🆔 Telegram ID: %d\n📌 Подписок: %d\n\nДоступные команды:\n/mysources - мои подписки\n/subscribe <URL> - подписаться\n/unsubscribe <URL> - отписаться\n/latest - последние новости\n/help - справка", m.Chat.ID, subsCount)
+			b.SendMessage(m.Chat.ID, msg)
+		}
+		return
 
 	case txt == "/help":
-		helpText := "/start - запустить бота\n" +
-			"/latest - последние новости (некоторые могут быть помечены прочитанными)\n" +
+		helpText := "/start - показать профиль\n" +
+			"/latest - последние новости\n" +
+			"/help - список команд\n" +
 			"/subscribe <URL> - подписаться на источник\n" +
 			"/unsubscribe <URL> - отписаться от источника\n" +
 			"/mysources - показать мои подписки\n"
-
 		if b.IsAdmin(m.Chat.ID) {
 			helpText += "\n(Админ команды)\n" +
-				"/addsource <URL>\n" +
-				"/removesource <URL>\n" +
-				"/listsources"
+				"/addsource - добавить источник (в два шага)\n" +
+				"/removesource - удалить источник (в два шага)\n" +
+				"/listsources - показать все источники\n"
 		}
 		b.SendMessage(m.Chat.ID, helpText)
 
@@ -66,42 +125,21 @@ func (b *Bot) HandleMessage(m *Message) {
 		}
 
 	case strings.HasPrefix(txt, "/addsource"):
+		// Для удобства — делаем двухшаговое добавление: сначала команда, бот скажет прислать ссылку
 		if !b.IsAdmin(m.Chat.ID) {
 			b.SendMessage(m.Chat.ID, "🚫 Команда доступна только администраторам.")
 			return
 		}
-		parts := strings.Fields(txt)
-		if len(parts) < 2 {
-			b.SendMessage(m.Chat.ID, "Использование: /addsource <URL>")
-			return
-		}
-		url := parts[1]
-		err := storage.AddSource(b.db, url, m.Chat.ID)
-		if err != nil {
-			b.SendMessage(m.Chat.ID, "Ошибка при добавлении источника.")
-			log.Printf("AddSource error: %v", err)
-			return
-		}
-		b.SendMessage(m.Chat.ID, "Источник успешно добавлен.")
+		b.setPending(m.Chat.ID, "addsource")
+		b.SendMessage(m.Chat.ID, "Отправьте ссылку на RSS-источник для добавления. Чтобы отменить — отправьте /cancel")
 
 	case strings.HasPrefix(txt, "/removesource"):
 		if !b.IsAdmin(m.Chat.ID) {
 			b.SendMessage(m.Chat.ID, "🚫 Команда доступна только администраторам.")
 			return
 		}
-		parts := strings.Fields(txt)
-		if len(parts) < 2 {
-			b.SendMessage(m.Chat.ID, "Использование: /removesource <URL>")
-			return
-		}
-		url := parts[1]
-		err := storage.RemoveSource(b.db, url)
-		if err != nil {
-			b.SendMessage(m.Chat.ID, "Ошибка при удалении источника.")
-			log.Printf("RemoveSource error: %v", err)
-			return
-		}
-		b.SendMessage(m.Chat.ID, "Источник успешно удалён.")
+		b.setPending(m.Chat.ID, "removesource")
+		b.SendMessage(m.Chat.ID, "Отправьте ссылку на RSS-источник для удаления. Чтобы отменить — отправьте /cancel")
 
 	case txt == "/listsources":
 		if !b.IsAdmin(m.Chat.ID) {
@@ -120,7 +158,6 @@ func (b *Bot) HandleMessage(m *Message) {
 		}
 		b.SendMessage(m.Chat.ID, "Источники новостей:\n"+strings.Join(sources, "\n"))
 
-	// --- подписки для пользователей ---
 	case strings.HasPrefix(txt, "/subscribe"):
 		parts := strings.Fields(txt)
 		if len(parts) < 2 {
@@ -163,6 +200,14 @@ func (b *Bot) HandleMessage(m *Message) {
 			return
 		}
 		b.SendMessage(m.Chat.ID, "Ваши подписки:\n"+strings.Join(urls, "\n"))
+
+	case txt == "/cancel":
+		if _, ok := b.getPending(m.Chat.ID); ok {
+			b.clearPending(m.Chat.ID)
+			b.SendMessage(m.Chat.ID, "Операция отменена.")
+		} else {
+			b.SendMessage(m.Chat.ID, "Нечего отменять.")
+		}
 
 	default:
 		log.Printf("Got message: %s", txt)
