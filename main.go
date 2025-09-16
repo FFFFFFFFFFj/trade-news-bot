@@ -43,6 +43,15 @@ func main() {
         log.Fatal("No RSS sources found in database. Add sources before starting the bot.")
     }
 
-    go b.StartNewsUpdater(sources, 10*time.Minute)
+    // Запускаем обновление новостей каждые 10 минут
+    b.StartNewsUpdater(10 * time.Minute)
+
+    // Запускаем рассылки 3 раза в день: 09:00, 15:00, 21:00
+    b.StartBroadcastScheduler([]string{"09:00", "15:00", "21:00"}, 8*time.Hour)
+
+    // Ежедневная очистка новостей старше 24 часов
+    b.StartNewsCleaner()
+
+    // Запуск обработки входящих сообщений
     b.Start()
 }
