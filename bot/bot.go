@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"net/url"
 
 	"github.com/FFFFFFFFFFj/trade-news-bot/rss"
 	"github.com/FFFFFFFFFFj/trade-news-bot/storage"
