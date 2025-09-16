@@ -6,13 +6,11 @@ import (
 	"time"
 
 	"github.com/joho/godotenv"
-
 	"github.com/FFFFFFFFFFj/trade-news-bot/bot"
 	"github.com/FFFFFFFFFFj/trade-news-bot/storage"
 )
 
 func main() {
-	// Загружаем .env
 	if err := godotenv.Load(); err != nil {
 		log.Fatal("Ошибка загрузки .env файла")
 	}
