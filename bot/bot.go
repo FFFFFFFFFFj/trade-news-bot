@@ -4,38 +4,48 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
-	"strings"
+	"net/url"
 	"sync"
 	"time"
-	"net/url"
 
 	"github.com/FFFFFFFFFFj/trade-news-bot/rss"
 	"github.com/FFFFFFFFFFj/trade-news-bot/storage"
 	tb "gopkg.in/telebot.v3"
 )
 
-// Bot представляет структуру Telegram-бота
 type Bot struct {
-	Token   string
-	APIBase string
-	db      *sql.DB
-
-	// pendingActions хранит состояние ожидания ввода URL после команды /addsource или /removesource
+	Token          string
+	db             *sql.DB
+	tbBot          *tb.Bot
 	pendingMutex   sync.Mutex
-	pendingActions map[int64]string // map[telegramUserID]actionName
+	pendingActions map[int64]string
 }
 
-// New создает и возвращает новый экземпляр бота
+// New создает нового бота
 func New(token string, db *sql.DB) *Bot {
-	return &Bot{
+	pref := tb.Settings{
+		Token:  token,
+		Poller: &tb.LongPoller{Timeout: 10 * time.Second},
+	}
+	tbBot, err := tb.NewBot(pref)
+	if err != nil {
+		log.Fatalf("failed to create telebot: %v", err)
+	}
+
+	b := &Bot{
 		Token:          token,
-		APIBase:        "https://api.telegram.org/bot" + token + "/",
 		db:             db,
+		tbBot:          tbBot,
 		pendingActions: make(map[int64]string),
 	}
+
+	// Глобальный callback для всех inline кнопок
+	b.tbBot.Handle(tb.OnCallback, b.HandleInlineCallbacks)
+
+	return b
 }
 
-// Вспомогательные методы для pending
+// Pending
 func (b *Bot) setPending(userID int64, action string) {
 	b.pendingMutex.Lock()
 	b.pendingActions[userID] = action
@@ -55,53 +65,102 @@ func (b *Bot) clearPending(userID int64) {
 	b.pendingMutex.Unlock()
 }
 
-// Start запускает цикл получения обновлений от Telegram (не меняем)
+// Start запускает Telebot
 func (b *Bot) Start() {
 	log.Println("Bot started ...")
-	var offset int
-	for {
-		updates, err := b.GetUpdates(offset, 30)
-		if err != nil {
-			if strings.Contains(err.Error(), "Client.Timeout") {
-				continue
-			}
-			log.Printf("getUpdates error: %v", err)
-			time.Sleep(3 * time.Second)
-			continue
-		}
-		for _, u := range updates {
-			offset = u.UpdateID + 1
-			if u.Message != nil {
-				b.HandleMessage(u.Message)
-			}
-		}
-	}
+	b.tbBot.Start()
 }
 
-// StartNewsUpdater теперь динамически запрашивает список источников из БД каждый цикл.
-// interval — интервал между циклами (например, 10*time.Minute)
+// SendMessage через Telebot
+func (b *Bot) SendMessage(chatID int64, text string) error {
+	_, err := b.tbBot.Send(&tb.Chat{ID: chatID}, text)
+	return err
+}
+
+// SendInlineButtons отправляет сообщение с inline-кнопками
+func (b *Bot) SendInlineButtons(chatID int64, text string, buttons [][]tb.InlineButton) error {
+	markup := &tb.ReplyMarkup{}
+	markup.InlineKeyboard = buttons
+	_, err := b.tbBot.Send(&tb.Chat{ID: chatID}, text, markup)
+	return err
+}
+
+// HandleInlineCallbacks обрабатывает нажатия на кнопки
+func (b *Bot) HandleInlineCallbacks(c tb.Context) error {
+	userID := c.Sender().ID
+	sourceURL := c.Callback().Data
+
+	userSources, err := storage.GetUserSources(b.db, userID)
+	if err != nil {
+		b.SendMessage(userID, "Ошибка при получении ваших подписок.")
+		log.Printf("GetUserSources error: %v", err)
+		return nil
+	}
+
+	if contains(userSources, sourceURL) {
+		err = storage.Unsubscribe(b.db, userID, sourceURL)
+		if err != nil {
+			b.SendMessage(userID, "Не удалось отписаться.")
+			log.Printf("Unsubscribe error: %v", err)
+			return nil
+		}
+	} else {
+		err = storage.Subscribe(b.db, userID, sourceURL)
+		if err != nil {
+			b.SendMessage(userID, "Не удалось подписаться.")
+			log.Printf("Subscribe error: %v", err)
+			return nil
+		}
+	}
+
+	// Перестраиваем inline-кнопки
+	allSources, _ := storage.GetAllSources(b.db)
+	userSources, _ = storage.GetUserSources(b.db, userID)
+
+	var buttons [][]tb.InlineButton
+	for _, src := range allSources {
+		displayName := src
+		if u, err := url.Parse(src); err == nil {
+			displayName = u.Host
+		}
+		prefix := ""
+		if contains(userSources, src) {
+			prefix = "✅ "
+		}
+		btn := tb.InlineButton{
+			Unique: "toggle_" + displayName,
+			Text:   prefix + displayName,
+			Data:   src,
+		}
+		buttons = append(buttons, []tb.InlineButton{btn})
+	}
+
+	markup := &tb.ReplyMarkup{InlineKeyboard: buttons}
+	c.Edit("Ваши подписки:", markup)
+
+	// Убираем "часики"
+	c.Respond()
+	return nil
+}
+
+// StartNewsUpdater обновляет новости каждые interval
 func (b *Bot) StartNewsUpdater(interval time.Duration) {
 	go func() {
 		for {
 			sources, err := storage.GetAllSources(b.db)
 			if err != nil {
 				log.Printf("Failed to get sources: %v", err)
-				time.Sleep(1 * time.Minute)
+				time.Sleep(time.Minute)
 				continue
 			}
-			if len(sources) == 0 {
-				// если нет источников — ждём и пробуем снова
-				time.Sleep(interval)
-				continue
-			}
-			for _, sourceURL := range sources {
-				items, err := rss.Fetch(sourceURL)
+			for _, src := range sources {
+				items, err := rss.Fetch(src)
 				if err != nil {
-					log.Printf("RSS fetch error (%s): %v", sourceURL, err)
+					log.Printf("RSS fetch error (%s): %v", src, err)
 					continue
 				}
-				for _, item := range items {
-					if err := storage.SaveNews(b.db, item, sourceURL); err != nil {
+				for _, it := range items {
+					if err := storage.SaveNews(b.db, it, src); err != nil {
 						log.Printf("SaveNews error: %v", err)
 					}
 				}
@@ -111,19 +170,14 @@ func (b *Bot) StartNewsUpdater(interval time.Duration) {
 	}()
 }
 
-
-// StartBroadcastScheduler запускает рассылки в заданные часы (в локальном времени сервера).
-// schedule - список строк в формате "HH:MM" (например: []string{"09:00","15:00","21:00"})
-// since - интервал (например 8*time.Hour) — будем брать новости, старше которых нет смысла рассылать.
+// StartBroadcastScheduler
 func (b *Bot) StartBroadcastScheduler(schedule []string, since time.Duration) {
 	go func() {
 		for {
 			now := time.Now().Format("15:04")
 			for _, t := range schedule {
 				if now == t {
-					// вычислим границу sinceTime
 					sinceTime := time.Now().Add(-since)
-					// получим список пользователей с подписками
 					users, err := storage.GetUsersWithSubscriptions(b.db)
 					if err != nil {
 						log.Printf("GetUsersWithSubscriptions error: %v", err)
@@ -135,22 +189,19 @@ func (b *Bot) StartBroadcastScheduler(schedule []string, since time.Duration) {
 							log.Printf("GetRecentNewsForUser error for %d: %v", uid, err)
 							continue
 						}
-						if len(items) == 0 {
-							continue
-						}
 						for _, it := range items {
 							msg := fmt.Sprintf("📰 %s\n🕒 %s\n🔗 %s\n\n", it.Title, it.PubDate, it.Link)
-							_ = b.SendMessage(uid, msg) // игнорируем ошибку отправки для одной конкретной — лог в SendMessage
+							_ = b.SendMessage(uid, msg)
 						}
 					}
 				}
 			}
-			time.Sleep(60 * time.Second) // проверяем каждую минуту
+			time.Sleep(time.Minute)
 		}
 	}()
 }
 
-// StartNewsCleaner удаляет все новости старше 24 часов (один раз в день)
+// StartNewsCleaner
 func (b *Bot) StartNewsCleaner() {
 	go func() {
 		for {
@@ -158,61 +209,17 @@ func (b *Bot) StartNewsCleaner() {
 			if err != nil {
 				log.Printf("Clean old news error: %v", err)
 			}
-			// запускать раз в 24 часа
 			time.Sleep(24 * time.Hour)
 		}
 	}()
 }
 
-// HandleInlineCallbacks обрабатывает нажатия на инлайн-кнопки
-func (b *Bot) HandleInlineCallbacks(c *tb.Callback) {
-	userID := c.Sender.ID
-	sourceURL := c.Data // в Data мы сохраняем полный URL источника
-
-	// Получаем список подписок пользователя
-	userSources, err := storage.GetUserSources(b.db, userID)
-	if err != nil {
-		b.SendMessage(userID, "Ошибка при получении ваших подписок.")
-		log.Printf("GetUserSources error: %v", err)
-		return
-	}
-
-	if contains(userSources, sourceURL) {
-		// Если уже подписан — отписываем
-		err := storage.Unsubscribe(b.db, userID, sourceURL)
-		if err != nil {
-			b.SendMessage(userID, "Не удалось отписаться.")
-			log.Printf("Unsubscribe error: %v", err)
-			return
-		}
-	} else {
-		// Если не подписан — подписываем
-		err := storage.Subscribe(b.db, userID, sourceURL)
-		if err != nil {
-			b.SendMessage(userID, "Не удалось подписаться.")
-			log.Printf("Subscribe error: %v", err)
-			return
+// вспомогательная функция
+func contains(list []string, s string) bool {
+	for _, v := range list {
+		if v == s {
+			return true
 		}
 	}
-
-	// Обновляем текст кнопки
-	displayName := sourceURL
-	if u, err := url.Parse(sourceURL); err == nil {
-		displayName = u.Host
-	}
-
-	prefix := ""
-	if !contains(userSources, sourceURL) {
-		prefix = "✅ " // если только что подписался
-	}
-
-	newText := prefix + displayName
-	btn := c.Message.ReplyMarkup.InlineKeyboard[0][0] // Берем первую кнопку, можно улучшить для всех кнопок
-	btn.Text = newText
-
-	// Отправляем обновленное сообщение
-	b.EditInline(c.Message, "Ваши подписки:", c.Message.ReplyMarkup)
-
-	// Отвечаем Telegram на callback, чтобы убрать "часики"
-	c.Respond()
+	return false
 }
