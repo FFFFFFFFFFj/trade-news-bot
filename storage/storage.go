@@ -62,6 +62,10 @@ func Migrate(db *sql.DB) error {
 			PRIMARY KEY (user_id, source_id),
 			FOREIGN KEY (source_id) REFERENCES rss_sources(id) ON DELETE CASCADE
 		);`,
+		`CREATE TABLE IF NOT EXISTS users (
+    		telegram_id BIGINT PRIMARY KEY,
+    		first_started TIMESTAMP NOT NULL DEFAULT NOW()
+		);`,
 	}
 	for _, query := range queries {
 		_, err := db.Exec(query)
@@ -324,4 +328,18 @@ func GetActiveUsersCount(db *sql.DB) (int, error) {
 	var count int
 	err := db.QueryRow("SELECT COUNT(DISTINCT user_id) FROM user_subscriptions").Scan(&count)
 	return count, err
+}
+
+func AddUserIfNotExists(db *sql.DB, userID int64) error {
+    _, err := db.Exec(
+        `INSERT INTO users (telegram_id) VALUES ($1) ON CONFLICT (telegram_id) DO NOTHING`,
+        userID,
+    )
+    return err
+}
+
+func GetTotalUsersCount(db *sql.DB) (int, error) {
+    var count int
+    err := db.QueryRow("SELECT COUNT(*) FROM users").Scan(&count)
+    return count, err
 }
