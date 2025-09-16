@@ -10,7 +10,7 @@ import (
 )
 
 var AdminIDs = map[int64]bool{
-	839986298: true,
+	839986298: true, // замените на ваши ID админов
 }
 
 func (b *Bot) IsAdmin(userID int64) bool {
@@ -42,7 +42,7 @@ func (b *Bot) HandleMessage(m *tb.Message) error {
 			return nil
 		}
 		for _, item := range items {
-			_, _ = b.bot.Send(m.Chat, fmt.Sprintf("📰 %s\n%s", item.Title, item.Link))
+			b.SendMessage(m.Chat.ID, fmt.Sprintf("📰 %s\n%s", item.Title, item.Link))
 			_ = storage.MarkNewsAsRead(b.db, m.Chat.ID, item.Link)
 		}
 
@@ -74,7 +74,10 @@ func (b *Bot) HandleMessage(m *tb.Message) error {
 		}
 
 		markup := &tb.ReplyMarkup{InlineKeyboard: rows}
-		_, _ = b.bot.Send(m.Chat, "Ваши источники:", markup)
+		_, err := b.bot.Send(m.Chat, "Ваши источники:", markup)
+		if err != nil {
+			log.Printf("Ошибка отправки inline кнопок: %v", err)
+		}
 
 	default:
 		log.Printf("Сообщение: %s", txt)
