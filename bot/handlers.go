@@ -17,7 +17,7 @@ func (b *Bot) IsAdmin(userID int64) bool {
 	return AdminIDs[userID]
 }
 
-func (b *Bot) HandleMessage(m *tb.Message) {
+func (b *Bot) HandleMessage(m *tb.Message) error {
 	txt := strings.TrimSpace(m.Text)
 
 	switch {
@@ -39,7 +39,7 @@ func (b *Bot) HandleMessage(m *tb.Message) {
 		items, _ := storage.GetUnreadNews(b.db, m.Chat.ID, 5)
 		if len(items) == 0 {
 			b.SendMessage(m.Chat.ID, "Нет новых новостей.")
-			return
+			return nil
 		}
 		for _, item := range items {
 			b.SendMessage(m.Chat.ID, fmt.Sprintf("📰 %s\n%s", item.Title, item.Link))
@@ -52,7 +52,7 @@ func (b *Bot) HandleMessage(m *tb.Message) {
 
 		if len(allSources) == 0 {
 			b.SendMessage(m.Chat.ID, "Нет доступных источников.")
-			return
+			return nil
 		}
 
 		userSet := make(map[string]bool)
@@ -74,12 +74,13 @@ func (b *Bot) HandleMessage(m *tb.Message) {
 		}
 
 		markup := &tb.ReplyMarkup{InlineKeyboard: rows}
-		_, err := b.bot.Send(m.Chat, "Ваши источники:", markup)
-		if err != nil {
+		if err := b.bot.Send(m.Chat, "Ваши источники:", markup); err != nil {
 			log.Printf("Ошибка отправки inline кнопок: %v", err)
 		}
 
 	default:
 		log.Printf("Сообщение: %s", txt)
 	}
+
+	return nil
 }
