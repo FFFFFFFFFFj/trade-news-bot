@@ -37,12 +37,10 @@ func New(token string, db *sql.DB) *Bot {
 }
 
 func (b *Bot) Start() {
-	// Обработка текстовых сообщений
 	b.bot.Handle(tb.OnText, func(c tb.Context) error {
 		return b.HandleMessage(c.Message())
 	})
 
-	// Обработка inline-кнопок
 	b.bot.Handle(&tb.Callback{Data: tb.Any}, func(c tb.Context) error {
 		data := c.Callback().Data
 		userID := c.Sender().ID
@@ -61,10 +59,10 @@ func (b *Bot) Start() {
 
 			if isSub {
 				_ = storage.Unsubscribe(b.db, userID, src)
-				c.Respond(&tb.CallbackResponse{Text: "❌ Отписка"})
+				_ = c.Respond(&tb.CallbackResponse{Text: "❌ Отписка"})
 			} else {
 				_ = storage.Subscribe(b.db, userID, src)
-				c.Respond(&tb.CallbackResponse{Text: "✅ Подписка"})
+				_ = c.Respond(&tb.CallbackResponse{Text: "✅ Подписка"})
 			}
 
 			return b.UpdateSourcesButtons(c)
@@ -77,7 +75,6 @@ func (b *Bot) Start() {
 	b.bot.Start()
 }
 
-// Обновление inline-кнопок источников
 func (b *Bot) UpdateSourcesButtons(c tb.Context) error {
 	allSources, _ := storage.GetAllSources(b.db)
 	userSources, _ := storage.GetUserSources(b.db, c.Sender().ID)
@@ -102,10 +99,10 @@ func (b *Bot) UpdateSourcesButtons(c tb.Context) error {
 	}
 
 	markup := &tb.ReplyMarkup{InlineKeyboard: rows}
-	return b.bot.Edit(c.Message(), "Ваши источники:", markup)
+	_, err := b.bot.Edit(c.Message(), "Ваши источники:", markup)
+	return err
 }
 
-// Обновление новостей в фоне
 func (b *Bot) StartNewsUpdater(interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -121,21 +118,19 @@ func (b *Bot) StartNewsUpdater(interval time.Duration) {
 		for userID, items := range news {
 			for _, item := range items {
 				msg := fmt.Sprintf("📰 %s\n🔗 %s\n", item.Title, item.Link)
-				b.SendMessage(userID, msg)
+				_, _ = b.bot.Send(tb.ChatID(userID), msg)
 			}
 		}
 	}
 }
 
-// Отправка сообщения пользователю
 func (b *Bot) SendMessage(chatID int64, text string) {
-	err := b.bot.Send(tb.ChatID(chatID), text)
+	_, err := b.bot.Send(tb.ChatID(chatID), text)
 	if err != nil {
 		log.Printf("Ошибка отправки: %v", err)
 	}
 }
 
-// Методы для pending действий (например, подписки)
 func (b *Bot) setPending(chatID int64, action string) {
 	b.pending[chatID] = action
 }
