@@ -13,12 +13,10 @@ var AdminIDs = map[int64]bool{
 	839986298: true,
 }
 
-// Проверка админа
 func (b *Bot) IsAdmin(userID int64) bool {
 	return AdminIDs[userID]
 }
 
-// Обработка текстовых сообщений
 func (b *Bot) HandleMessage(m *tb.Message) error {
 	txt := strings.TrimSpace(m.Text)
 
@@ -44,8 +42,7 @@ func (b *Bot) HandleMessage(m *tb.Message) error {
 			return nil
 		}
 		for _, item := range items {
-			// Send возвращает только error
-			_ = b.bot.Send(m.Chat, fmt.Sprintf("📰 %s\n%s", item.Title, item.Link))
+			_, _ = b.bot.Send(m.Chat, fmt.Sprintf("📰 %s\n%s", item.Title, item.Link))
 			_ = storage.MarkNewsAsRead(b.db, m.Chat.ID, item.Link)
 		}
 
@@ -77,7 +74,7 @@ func (b *Bot) HandleMessage(m *tb.Message) error {
 		}
 
 		markup := &tb.ReplyMarkup{InlineKeyboard: rows}
-		_ = b.bot.Send(m.Chat, "Ваши источники:", markup)
+		_, _ = b.bot.Send(m.Chat, "Ваши источники:", markup)
 
 	default:
 		log.Printf("Сообщение: %s", txt)
