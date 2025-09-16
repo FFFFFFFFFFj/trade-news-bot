@@ -17,7 +17,7 @@ func (b *Bot) IsAdmin(userID int64) bool {
 	return AdminIDs[userID]
 }
 
-func (b *Bot) HandleMessage(m *tb.Message) error {
+func (b *Bot) HandleMessage(m *tb.Message) {
 	txt := strings.TrimSpace(m.Text)
 
 	switch {
@@ -26,31 +26,30 @@ func (b *Bot) HandleMessage(m *tb.Message) error {
 		if b.IsAdmin(m.Chat.ID) {
 			activeUsers, _ := storage.GetActiveUsersCount(b.db)
 			msg := fmt.Sprintf("👑 Админ\nID: %d\nАктивных пользователей: %d\nВсего источников: %d", m.Chat.ID, activeUsers, len(storage.MustGetAllSources(b.db)))
-			return b.SendMessage(m.Chat.ID, msg)
+			b.SendMessage(m.Chat.ID, msg)
 		} else {
 			msg := fmt.Sprintf("👤 Пользователь\nID: %d\nПодписок: %d", m.Chat.ID, subsCount)
-			return b.SendMessage(m.Chat.ID, msg)
+			b.SendMessage(m.Chat.ID, msg)
 		}
 
 	case txt == "/help":
-		return b.SendMessage(m.Chat.ID, "Доступные команды:\n/start\n/help\n/latest\n/mysources")
+		b.SendMessage(m.Chat.ID, "Доступные команды:\n/start\n/help\n/latest\n/mysources")
 
 	case txt == "/latest":
 		items, _ := storage.GetUnreadNews(b.db, m.Chat.ID, 5)
 		if len(items) == 0 {
-			return b.SendMessage(m.Chat.ID, "Нет новых новостей.")
+			b.SendMessage(m.Chat.ID, "Нет новых новостей.")
+			return
 		}
 		for _, item := range items {
-			_ = b.SendMessage(m.Chat.ID, fmt.Sprintf("📰 %s\n🔗 %s", item.Title, item.Link))
+			b.SendMessage(m.Chat.ID, fmt.Sprintf("📰 %s\n🔗 %s", item.Title, item.Link))
 			_ = storage.MarkNewsAsRead(b.db, m.Chat.ID, item.Link)
 		}
-		return nil
 
 	case txt == "/mysources":
-		return b.ShowSourcesMenu(m.Chat.ID)
+		b.ShowSourcesMenu(m.Chat.ID)
 
 	default:
 		log.Printf("Сообщение: %s", txt)
-		return nil
 	}
 }
