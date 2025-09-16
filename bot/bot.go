@@ -29,19 +29,18 @@ func New(token string, db *sql.DB) *Bot {
 		log.Fatalf("Ошибка создания бота: %v", err)
 	}
 
-	bot := &Bot{
+	wrapper := &Bot{
 		bot:     b,
 		db:      db,
 		pending: make(map[int64]string),
 	}
 
-	// Обработчик текста
+	// Обработка сообщений
 	b.Handle(tb.OnText, func(c tb.Context) error {
-		b.HandleMessage(c.Message())
-		return nil
+		return wrapper.HandleMessage(c.Message())
 	})
 
-	// Обработчик inline-кнопок
+	// Обработка inline-кнопок
 	b.Handle(tb.OnCallback, func(c tb.Context) error {
 		data := c.Callback().Data
 		userID := c.Sender().ID
@@ -49,7 +48,7 @@ func New(token string, db *sql.DB) *Bot {
 		if strings.HasPrefix(data, "toggle:") {
 			src := strings.TrimPrefix(data, "toggle:")
 
-			subs, _ := storage.GetUserSources(b.db, userID)
+			subs, _ := storage.GetUserSources(wrapper.db, userID)
 			isSub := false
 			for _, s := range subs {
 				if s == src {
@@ -59,20 +58,19 @@ func New(token string, db *sql.DB) *Bot {
 			}
 
 			if isSub {
-				_ = storage.Unsubscribe(b.db, userID, src)
+				_ = storage.Unsubscribe(wrapper.db, userID, src)
 				_ = c.Respond(&tb.CallbackResponse{Text: "❌ Отписка"})
 			} else {
-				_ = storage.Subscribe(b.db, userID, src)
+				_ = storage.Subscribe(wrapper.db, userID, src)
 				_ = c.Respond(&tb.CallbackResponse{Text: "✅ Подписка"})
 			}
 
-			return b.UpdateSourcesButtons(c)
+			return wrapper.UpdateSourcesButtons(c)
 		}
-
 		return nil
 	})
 
-	return bot
+	return wrapper
 }
 
 func (b *Bot) Start() {
@@ -108,42 +106,42 @@ func (b *Bot) UpdateSourcesButtons(c tb.Context) error {
 }
 
 func (b *Bot) StartNewsUpdater(interval time.Duration) {
-	go func() {
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-		for range ticker.C {
-			log.Println("🔄 Проверка новостей...")
-			newsMap, err := storage.FetchAndStoreNews(b.db)
-			if err != nil {
-				log.Printf("Ошибка обновления новостей: %v", err)
-				continue
-			}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
 
-			for userID, items := range newsMap {
-				for _, item := range items {
-					msg := fmt.Sprintf("📰 %s\n🔗 %s\n", item.Title, item.Link)
-					b.SendMessage(userID, msg)
-				}
+	for range ticker.C {
+		log.Println("🔄 Проверка новостей...")
+		news, err := storage.FetchAndStoreNews(b.db)
+		if err != nil {
+			log.Printf("Ошибка обновления новостей: %v", err)
+			continue
+		}
+
+		for userID, items := range news {
+			for _, item := range items {
+				msg := fmt.Sprintf("📰 %s\n🔗 %s\n", item.Title, item.Link)
+				b.SendMessage(userID, msg)
 			}
 		}
-	}()
+	}
 }
 
 func (b *Bot) SendMessage(chatID int64, text string) {
-	_, err := b.bot.Send(tb.ChatID(chatID), text)
+	err := b.bot.Send(tb.ChatID(chatID), text)
 	if err != nil {
 		log.Printf("Ошибка отправки: %v", err)
 	}
 }
 
-// Pending
 func (b *Bot) setPending(chatID int64, action string) {
 	b.pending[chatID] = action
 }
+
 func (b *Bot) getPending(chatID int64) (string, bool) {
 	action, ok := b.pending[chatID]
 	return action, ok
 }
+
 func (b *Bot) clearPending(chatID int64) {
 	delete(b.pending, chatID)
 }
