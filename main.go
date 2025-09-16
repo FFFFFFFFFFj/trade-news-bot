@@ -1,49 +1,48 @@
 package main
 
 import (
-	"log"
-	"os"
-	"time"
-	"github.com/FFFFFFFFFFj/trade-news-bot/bot"
-	"github.com/FFFFFFFFFFj/trade-news-bot/storage"
+    "log"
+    "os"
+    "time"
+
+    "github.com/joho/godotenv"
+    "github.com/FFFFFFFFFFj/trade-news-bot/bot"
+    "github.com/FFFFFFFFFFj/trade-news-bot/storage"
 )
 
 func main() {
-	token := os.Getenv("BOT_TOKEN")
-	if token == "" {
-		log.Fatal("BOT_TOKEN not set")
-	}
+    // Загружаем .env
+    err := godotenv.Load()
+    if err != nil {
+        log.Fatal("Ошибка загрузки .env файла")
+    }
 
-	db, err := storage.ConnectDB()
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer db.Close()
+    token := os.Getenv("TELEGRAM_TOKEN")
+    if token == "" {
+        log.Fatal("TELEGRAM_TOKEN не установлен")
+    }
 
-	err = storage.Migrate(db)
-	if err != nil {
-		log.Fatal("Migration failed:", err)
-	}
+    db, err := storage.ConnectDB()
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer db.Close()
 
-	b := bot.New(token, db)
+    err = storage.Migrate(db)
+    if err != nil {
+        log.Fatal("Migration failed:", err)
+    }
 
-	sources, err := storage.GetAllSources(db)
-	if err != nil {
-		log.Fatalf("Failed to get sources: %v", err)
-	}
-	if len(sources) == 0 {
-		log.Fatal("No RSS sources found in database. Add sources before starting the bot.")
-	}
+    b := bot.New(token, db)
 
-	// Запускаем обновление новостей (внутри уже запускается goroutine)
-	b.StartNewsUpdater(10 * time.Minute)
+    sources, err := storage.GetAllSources(db)
+    if err != nil {
+        log.Fatalf("Failed to get sources: %v", err)
+    }
+    if len(sources) == 0 {
+        log.Fatal("No RSS sources found in database. Add sources before starting the bot.")
+    }
 
-	// Запускаем рассылки 3 раза в день: пример 09:00, 15:00, 21:00 — и берём новости за последние 8 часов
-	b.StartBroadcastScheduler([]string{"09:00", "15:00", "21:00"}, 8*time.Hour)
-
-	// Ежедневная очистка старых новостей
-	b.StartNewsCleaner()
-
-	// Блокирующий цикл обработки входящих сообщений
-	b.Start()
+    go b.StartNewsUpdater(sources, 10*time.Minute)
+    b.Start()
 }
