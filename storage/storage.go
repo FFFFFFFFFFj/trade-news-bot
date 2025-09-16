@@ -66,27 +66,61 @@ func Migrate(db *sql.DB) error {
 	return nil
 }
 
-func SaveNews(db *sql.DB, item rss.Item, sourceURL string) error {
-	// Если pub_date пустой — вставляем NULL
-	if item.PubDate == "" {
-		query := `
-			INSERT INTO news (title, link, pub_date, source_url)
-			VALUES ($1, $2, NULL, $3)
-			ON CONFLICT (link) DO NOTHING;
-		`
-		_, err := db.Exec(query, item.Title, item.Link, sourceURL)
-		return err
-	}
-
-	query := `
-		INSERT INTO news (title, link, pub_date, source_url)
-		VALUES ($1, $2, $3, $4)
-		ON CONFLICT (link) DO NOTHING;
-	`
-	_, err := db.Exec(query, item.Title, item.Link, item.PubDate, sourceURL)
-	return err
+// helper: tries to parse common RSS date formats
+func parsePubDate(s string) (*time.Time, error) {
+    if s == "" {
+        return nil, nil
+    }
+    // common formats
+    layouts := []string{
+        time.RFC1123Z,
+        time.RFC1123,
+        time.RFC3339,
+        "Mon, 02 Jan 2006 15:04:05 MST",
+        "02 Jan 2006 15:04:05 -0700", // fallback
+    }
+    for _, l := range layouts {
+        if t, err := time.Parse(l, s); err == nil {
+            return &t, nil
+        }
+    }
+    // last attempt: try ParseInLocation with RFC1123Z
+    if t, err := time.ParseInLocation(time.RFC1123Z, s, time.UTC); err == nil {
+        return &t, nil
+    }
+    return nil, fmt.Errorf("unsupported date format: %s", s)
 }
 
+func SaveNews(db *sql.DB, item rss.Item, sourceURL string) error {
+    // Попробуем распарсить дату
+    tptr, err := parsePubDate(item.PubDate)
+    if err != nil {
+        // если не удалось распарсить — вставляем NULL, но логируем (не фатально)
+        // но можно логировать более подробно в реальном приложении
+        _, err2 := db.Exec(`
+            INSERT INTO news (title, link, pub_date, source_url)
+            VALUES ($1, $2, NULL, $3)
+            ON CONFLICT (link) DO NOTHING;
+        `, item.Title, item.Link, sourceURL)
+        return err2
+    }
+
+    if tptr == nil {
+        _, err2 := db.Exec(`
+            INSERT INTO news (title, link, pub_date, source_url)
+            VALUES ($1, $2, NULL, $3)
+            ON CONFLICT (link) DO NOTHING;
+        `, item.Title, item.Link, sourceURL)
+        return err2
+    }
+
+    _, err3 := db.Exec(`
+        INSERT INTO news (title, link, pub_date, source_url)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (link) DO NOTHING;
+    `, item.Title, item.Link, *tptr, sourceURL)
+    return err3
+}
 // Получить все новости (без фильтрации на прочитанные)
 func GetLatestNews(db *sql.DB, limit int) ([]rss.Item, error) {
 	query := `
