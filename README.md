@@ -5,3 +5,4 @@ sudo apt install -y golang go
 
 go get github.com/mmcdole/gofeed
 go get github.com/lib/dg
+go get github.com/joho/godotenv
