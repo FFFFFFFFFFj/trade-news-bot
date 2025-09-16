@@ -145,3 +145,93 @@ func (b *Bot) getPending(chatID int64) (string, bool) {
 func (b *Bot) clearPending(chatID int64) {
 	delete(b.pending, chatID)
 }
+
+// ShowSourcesMenu отображает пользователю все источники с кнопками подписки/отписки
+func (b *Bot) ShowSourcesMenu(chatID int64) error {
+	allSources := storage.MustGetAllSources(b.db)
+	userSources, _ := storage.GetUserSources(b.db, chatID)
+
+	userSet := make(map[string]bool)
+	for _, s := range userSources {
+		userSet[s] = true
+	}
+
+	var rows [][]tb.InlineButton
+	for _, src := range allSources {
+		label := src
+		if userSet[src] {
+			label = "✅ " + label
+		} else {
+			label = "❌ " + label
+		}
+		btn := tb.InlineButton{
+			Text: label,
+			Data: "toggle:" + src,
+		}
+		rows = append(rows, []tb.InlineButton{btn})
+	}
+
+	markup := &tb.ReplyMarkup{InlineKeyboard: rows}
+	_, err := b.bot.Send(tb.ChatID(chatID), "Ваши источники:", markup)
+	return err
+}
+
+// ToggleSource подписывает или отписывает пользователя при нажатии кнопки
+func (b *Bot) ToggleSource(c tb.Context) error {
+	data := c.Callback().Data
+	userID := c.Sender().ID
+
+	if strings.HasPrefix(data, "toggle:") {
+		src := strings.TrimPrefix(data, "toggle:")
+
+		subs, _ := storage.GetUserSources(b.db, userID)
+		isSub := false
+		for _, s := range subs {
+			if s == src {
+				isSub = true
+				break
+			}
+		}
+
+		if isSub {
+			_ = storage.Unsubscribe(b.db, userID, src)
+			_ = c.Respond(&tb.CallbackResponse{Text: "❌ Отписка"})
+		} else {
+			_ = storage.Subscribe(b.db, userID, src)
+			_ = c.Respond(&tb.CallbackResponse{Text: "✅ Подписка"})
+		}
+
+		return b.UpdateSourcesButtons(c)
+	}
+	return nil
+}
+
+// UpdateSourcesButtons обновляет inline-кнопки для источников после нажатия
+func (b *Bot) UpdateSourcesButtons(c tb.Context) error {
+	allSources := storage.MustGetAllSources(b.db)
+	userSources, _ := storage.GetUserSources(b.db, c.Sender().ID)
+
+	userSet := make(map[string]bool)
+	for _, s := range userSources {
+		userSet[s] = true
+	}
+
+	var rows [][]tb.InlineButton
+	for _, src := range allSources {
+		label := src
+		if userSet[src] {
+			label = "✅ " + label
+		} else {
+			label = "❌ " + label
+		}
+		btn := tb.InlineButton{
+			Text: label,
+			Data: "toggle:" + src,
+		}
+		rows = append(rows, []tb.InlineButton{btn})
+	}
+
+	markup := &tb.ReplyMarkup{InlineKeyboard: rows}
+	_, err := b.bot.Edit(c.Message(), "Ваши источники:", markup)
+	return err
+}
