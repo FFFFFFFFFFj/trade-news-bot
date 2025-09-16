@@ -9,42 +9,40 @@ import (
 	"time"
 
 	"github.com/FFFFFFFFFFj/trade-news-bot/storage"
-	"gopkg.in/telebot.v3"
+	tb "gopkg.in/telebot.v3"
 )
 
 type Bot struct {
-	bot     *telebot.Bot
+	bot     *tb.Bot
 	db      *sql.DB
 	pending map[int64]string
 }
 
 func New(token string, db *sql.DB) *Bot {
-	pref := telebot.Settings{
+	pref := tb.Settings{
 		Token:  token,
-		Poller: &telebot.LongPoller{Timeout: 10 * time.Second},
+		Poller: &tb.LongPoller{Timeout: 10 * time.Second},
 	}
 
-	b, err := telebot.NewBot(pref)
+	b, err := tb.NewBot(pref)
 	if err != nil {
 		log.Fatalf("Ошибка создания бота: %v", err)
 	}
 
-	return &Bot{
+	bot := &Bot{
 		bot:     b,
 		db:      db,
 		pending: make(map[int64]string),
 	}
-}
 
-func (b *Bot) Start() {
-	// Обработка сообщений
-	b.bot.Handle(telebot.OnText, func(c telebot.Context) error {
+	// Обработчик текста
+	b.Handle(tb.OnText, func(c tb.Context) error {
 		b.HandleMessage(c.Message())
 		return nil
 	})
 
-	// Обработка inline-кнопок
-	b.bot.Handle(&telebot.Callback{Data: telebot.Any}, func(c telebot.Context) error {
+	// Обработчик inline-кнопок
+	b.Handle(tb.OnCallback, func(c tb.Context) error {
 		data := c.Callback().Data
 		userID := c.Sender().ID
 
@@ -62,10 +60,10 @@ func (b *Bot) Start() {
 
 			if isSub {
 				_ = storage.Unsubscribe(b.db, userID, src)
-				c.Respond(&telebot.CallbackResponse{Text: "❌ Отписка"})
+				_ = c.Respond(&tb.CallbackResponse{Text: "❌ Отписка"})
 			} else {
 				_ = storage.Subscribe(b.db, userID, src)
-				c.Respond(&telebot.CallbackResponse{Text: "✅ Подписка"})
+				_ = c.Respond(&tb.CallbackResponse{Text: "✅ Подписка"})
 			}
 
 			return b.UpdateSourcesButtons(c)
@@ -74,11 +72,15 @@ func (b *Bot) Start() {
 		return nil
 	})
 
+	return bot
+}
+
+func (b *Bot) Start() {
 	log.Println("🤖 Бот запущен...")
 	b.bot.Start()
 }
 
-func (b *Bot) UpdateSourcesButtons(c telebot.Context) error {
+func (b *Bot) UpdateSourcesButtons(c tb.Context) error {
 	allSources, _ := storage.GetAllSources(b.db)
 	userSources, _ := storage.GetUserSources(b.db, c.Sender().ID)
 
@@ -87,60 +89,61 @@ func (b *Bot) UpdateSourcesButtons(c telebot.Context) error {
 		userSet[s] = true
 	}
 
-	var rows [][]telebot.InlineButton
+	var rows [][]tb.InlineButton
 	for _, src := range allSources {
 		u, _ := url.Parse(src)
 		label := u.Host
 		if userSet[src] {
 			label = "✅ " + label
 		}
-		btn := telebot.InlineButton{
+		btn := tb.InlineButton{
 			Text: label,
 			Data: "toggle:" + src,
 		}
-		rows = append(rows, []telebot.InlineButton{btn})
+		rows = append(rows, []tb.InlineButton{btn})
 	}
 
-	return b.bot.Edit(c.Message(), "Ваши источники:", &telebot.ReplyMarkup{InlineKeyboard: rows})
+	markup := &tb.ReplyMarkup{InlineKeyboard: rows}
+	return b.bot.Edit(c.Message(), "Ваши источники:", markup)
 }
 
 func (b *Bot) StartNewsUpdater(interval time.Duration) {
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for range ticker.C {
+			log.Println("🔄 Проверка новостей...")
+			newsMap, err := storage.FetchAndStoreNews(b.db)
+			if err != nil {
+				log.Printf("Ошибка обновления новостей: %v", err)
+				continue
+			}
 
-	for range ticker.C {
-		log.Println("🔄 Проверка новостей...")
-		news, err := storage.FetchAndStoreNews(b.db)
-		if err != nil {
-			log.Printf("Ошибка обновления новостей: %v", err)
-			continue
-		}
-
-		for userID, items := range news {
-			for _, item := range items {
-				msg := fmt.Sprintf("📰 %s\n🔗 %s\n", item.Title, item.Link)
-				b.SendMessage(userID, msg)
+			for userID, items := range newsMap {
+				for _, item := range items {
+					msg := fmt.Sprintf("📰 %s\n🔗 %s\n", item.Title, item.Link)
+					b.SendMessage(userID, msg)
+				}
 			}
 		}
-	}
+	}()
 }
 
 func (b *Bot) SendMessage(chatID int64, text string) {
-	_, err := b.bot.Send(telebot.ChatID(chatID), text)
+	_, err := b.bot.Send(tb.ChatID(chatID), text)
 	if err != nil {
 		log.Printf("Ошибка отправки: %v", err)
 	}
 }
 
+// Pending
 func (b *Bot) setPending(chatID int64, action string) {
 	b.pending[chatID] = action
 }
-
 func (b *Bot) getPending(chatID int64) (string, bool) {
 	action, ok := b.pending[chatID]
 	return action, ok
 }
-
 func (b *Bot) clearPending(chatID int64) {
 	delete(b.pending, chatID)
 }
