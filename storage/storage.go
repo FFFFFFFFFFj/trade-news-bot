@@ -231,3 +231,7 @@ func FetchAndStoreNews(db *sql.DB) (map[int64][]NewsItem, error) {
 	}
 	return newsMap, nil
 }
+func MustGetAllSources(db *sql.DB) []string {
+	sources, _ := GetAllSources(db)
+	return sources
+}
