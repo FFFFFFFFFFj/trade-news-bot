@@ -10,6 +10,7 @@ import (
 
 	"github.com/FFFFFFFFFFj/trade-news-bot/rss"
 	"github.com/FFFFFFFFFFj/trade-news-bot/storage"
+	tb "gopkg.in/telebot.v3"
 )
 
 // Bot представляет структуру Telegram-бота
@@ -160,4 +161,57 @@ func (b *Bot) StartNewsCleaner() {
 			time.Sleep(24 * time.Hour)
 		}
 	}()
+}
+
+// HandleInlineCallbacks обрабатывает нажатия на инлайн-кнопки
+func (b *Bot) HandleInlineCallbacks(c *tb.Callback) {
+	userID := c.Sender.ID
+	sourceURL := c.Data // в Data мы сохраняем полный URL источника
+
+	// Получаем список подписок пользователя
+	userSources, err := storage.GetUserSources(b.db, userID)
+	if err != nil {
+		b.SendMessage(userID, "Ошибка при получении ваших подписок.")
+		log.Printf("GetUserSources error: %v", err)
+		return
+	}
+
+	if contains(userSources, sourceURL) {
+		// Если уже подписан — отписываем
+		err := storage.Unsubscribe(b.db, userID, sourceURL)
+		if err != nil {
+			b.SendMessage(userID, "Не удалось отписаться.")
+			log.Printf("Unsubscribe error: %v", err)
+			return
+		}
+	} else {
+		// Если не подписан — подписываем
+		err := storage.Subscribe(b.db, userID, sourceURL)
+		if err != nil {
+			b.SendMessage(userID, "Не удалось подписаться.")
+			log.Printf("Subscribe error: %v", err)
+			return
+		}
+	}
+
+	// Обновляем текст кнопки
+	displayName := sourceURL
+	if u, err := url.Parse(sourceURL); err == nil {
+		displayName = u.Host
+	}
+
+	prefix := ""
+	if !contains(userSources, sourceURL) {
+		prefix = "✅ " // если только что подписался
+	}
+
+	newText := prefix + displayName
+	btn := c.Message.ReplyMarkup.InlineKeyboard[0][0] // Берем первую кнопку, можно улучшить для всех кнопок
+	btn.Text = newText
+
+	// Отправляем обновленное сообщение
+	b.EditInline(c.Message, "Ваши подписки:", c.Message.ReplyMarkup)
+
+	// Отвечаем Telegram на callback, чтобы убрать "часики"
+	c.Respond()
 }
