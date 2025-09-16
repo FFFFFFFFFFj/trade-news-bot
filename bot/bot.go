@@ -54,9 +54,9 @@ func (b *Bot) Start() {
 }
 
 // ShowSourcesMenu отображает пользователю все источники с кнопками подписки/отписки
-func (b *Bot) ShowSourcesMenu(chatID int64) {
-	allSources := storage.MustGetAllSources(b.db)
-	userSources, _ := storage.GetUserSources(b.db, chatID)
+func (b *Bot) ShowSourcesMenu(chatID int64) error {
+	allSources := storage.MustGetAllSources(b.db) // все источники из базы
+	userSources, _ := storage.GetUserSources(b.db, chatID) // подписки пользователя
 
 	userSet := make(map[string]bool)
 	for _, s := range userSources {
@@ -80,9 +80,7 @@ func (b *Bot) ShowSourcesMenu(chatID int64) {
 
 	markup := &tb.ReplyMarkup{InlineKeyboard: rows}
 	_, err := b.bot.Send(tb.ChatID(chatID), "Ваши источники:", markup)
-	if err != nil {
-		log.Printf("Ошибка отправки sources menu: %v", err)
-	}
+	return err
 }
 
 // ToggleSource подписывает или отписывает пользователя при нажатии кнопки
