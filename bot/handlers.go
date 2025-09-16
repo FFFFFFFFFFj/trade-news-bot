@@ -3,9 +3,11 @@ package bot
 import (
 	"fmt"
 	"log"
+	"net/url"
 	"strings"
 
 	"github.com/FFFFFFFFFFj/trade-news-bot/storage"
+	tb "gopkg.in/telebot.v3"
 )
 
 var AdminIDs = map[int64]bool{
@@ -19,11 +21,10 @@ func (b *Bot) IsAdmin(userID int64) bool {
 func (b *Bot) HandleMessage(m *Message) {
 	txt := strings.TrimSpace(m.Text)
 
-	// 1) Если у пользователя есть ожидаемое действие (pending) и сообщение не команда — воспринимаем как URL
+	// 1️⃣ Pending actions (для /addsource и /removesource)
 	if action, ok := b.getPending(m.Chat.ID); ok && !strings.HasPrefix(txt, "/") {
 		switch action {
 		case "addsource":
-			// Добавление источника (только админ)
 			if !b.IsAdmin(m.Chat.ID) {
 				b.SendMessage(m.Chat.ID, "🚫 Команда доступна только администраторам.")
 				b.clearPending(m.Chat.ID)
@@ -40,7 +41,6 @@ func (b *Bot) HandleMessage(m *Message) {
 			return
 
 		case "removesource":
-			// Удаление источника (только админ)
 			if !b.IsAdmin(m.Chat.ID) {
 				b.SendMessage(m.Chat.ID, "🚫 Команда доступна только администраторам.")
 				b.clearPending(m.Chat.ID)
@@ -56,30 +56,35 @@ func (b *Bot) HandleMessage(m *Message) {
 			b.clearPending(m.Chat.ID)
 			return
 		default:
-			// неизвестное состояние — сброс
 			b.clearPending(m.Chat.ID)
 		}
 	}
 
-	// 2) Обработка обычных команд
+	// 2️⃣ Основные команды
 	switch {
 	case txt == "/start":
-		// Профиль — пользовательский или админский
-		subsCount, err := storage.GetUserSubscriptionCount(b.db, m.Chat.ID)
+		// Добавляем пользователя в базу, если первый раз
+		err := storage.AddUserIfNotExists(b.db, m.Chat.ID)
 		if err != nil {
-			log.Printf("GetUserSubscriptionCount error for %d: %v", m.Chat.ID, err)
-			subsCount = 0
+			log.Printf("AddUserIfNotExists error for %d: %v", m.Chat.ID, err)
 		}
+
+		subsCount, _ := storage.GetUserSubscriptionCount(b.db, m.Chat.ID)
+
 		if b.IsAdmin(m.Chat.ID) {
-			activeUsers, err := storage.GetActiveUsersCount(b.db)
-			if err != nil {
-				log.Printf("GetActiveUsersCount error: %v", err)
-				activeUsers = 0
-			}
-			msg := fmt.Sprintf("👑 Админ профиль\n🆔 Telegram ID: %d\n📊 Активных пользователей: %d\n\nАдмин команды:\n/addsource - добавить источник\n/removesource - удалить источник\n/listsources - показать все источники\n\nПубличные команды:\n/mysources - мои подписки\n/subscribe <URL> - подписаться\n/unsubscribe <URL> - отписаться\n/latest - последние новости\n/help - справка", m.Chat.ID, activeUsers)
+			activeUsers, _ := storage.GetActiveUsersCount(b.db)
+			totalUsers, _ := storage.GetTotalUsersCount(b.db)
+
+			msg := fmt.Sprintf(
+				"👑 Админ профиль\n🆔 Telegram ID: %d\n📊 Активных пользователей: %d\n🌐 Всего пользователей, нажавших /start: %d\n\n"+
+					"Админ команды:\n/addsource - добавить источник\n/removesource - удалить источник\n/listsources - показать все источники\n\n"+
+					"Публичные команды:\n/mysources - мои подписки\n/subscribe - подписаться\n/unsubscribe - отписаться\n/latest - последние новости\n/help - справка",
+				m.Chat.ID, activeUsers, totalUsers)
 			b.SendMessage(m.Chat.ID, msg)
 		} else {
-			msg := fmt.Sprintf("👤 Ваш профиль\n🆔 Telegram ID: %d\n📌 Подписок: %d\n\nДоступные команды:\n/mysources - мои подписки\n/subscribe <URL> - подписаться\n/unsubscribe <URL> - отписаться\n/latest - последние новости\n/help - справка", m.Chat.ID, subsCount)
+			msg := fmt.Sprintf(
+				"👤 Ваш профиль\n🆔 Telegram ID: %d\n📌 Подписок: %d\n\nДоступные команды:\n/mysources - мои подписки\n/subscribe - подписаться\n/unsubscribe - отписаться\n/latest - последние новости\n/help - справка",
+				m.Chat.ID, subsCount)
 			b.SendMessage(m.Chat.ID, msg)
 		}
 		return
@@ -88,8 +93,6 @@ func (b *Bot) HandleMessage(m *Message) {
 		helpText := "/start - показать профиль\n" +
 			"/latest - последние новости\n" +
 			"/help - список команд\n" +
-			"/subscribe <URL> - подписаться на источник\n" +
-			"/unsubscribe <URL> - отписаться от источника\n" +
 			"/mysources - показать мои подписки\n"
 		if b.IsAdmin(m.Chat.ID) {
 			helpText += "\n(Админ команды)\n" +
@@ -113,94 +116,46 @@ func (b *Bot) HandleMessage(m *Message) {
 		}
 		for _, item := range items {
 			msg := fmt.Sprintf("📌 %s\n🕒 %s\n🔗 %s\n\n", item.Title, item.PubDate, item.Link)
-			err = b.SendMessage(m.Chat.ID, msg)
-			if err != nil {
-				log.Printf("SendMessage error: %v", err)
-				continue
-			}
-			err = storage.MarkNewsAsRead(b.db, m.Chat.ID, item.Link)
-			if err != nil {
-				log.Printf("MarkNewsAsRead error: %v", err)
-			}
+			_ = b.SendMessage(m.Chat.ID, msg)
+			_ = storage.MarkNewsAsRead(b.db, m.Chat.ID, item.Link)
 		}
 
-	case strings.HasPrefix(txt, "/addsource"):
-		// Для удобства — делаем двухшаговое добавление: сначала команда, бот скажет прислать ссылку
-		if !b.IsAdmin(m.Chat.ID) {
-			b.SendMessage(m.Chat.ID, "🚫 Команда доступна только администраторам.")
-			return
-		}
-		b.setPending(m.Chat.ID, "addsource")
-		b.SendMessage(m.Chat.ID, "Отправьте ссылку на RSS-источник для добавления. Чтобы отменить — отправьте /cancel")
-
-	case strings.HasPrefix(txt, "/removesource"):
-		if !b.IsAdmin(m.Chat.ID) {
-			b.SendMessage(m.Chat.ID, "🚫 Команда доступна только администраторам.")
-			return
-		}
-		b.setPending(m.Chat.ID, "removesource")
-		b.SendMessage(m.Chat.ID, "Отправьте ссылку на RSS-источник для удаления. Чтобы отменить — отправьте /cancel")
-
-	case txt == "/listsources":
-		if !b.IsAdmin(m.Chat.ID) {
-			b.SendMessage(m.Chat.ID, "🚫 Команда доступна только администраторам.")
-			return
-		}
-		sources, err := storage.GetAllSources(b.db)
+	case txt == "/mysources":
+		// Получаем все источники и подписки пользователя
+		allSources, err := storage.GetAllSources(b.db)
 		if err != nil {
 			b.SendMessage(m.Chat.ID, "Ошибка при получении списка источников.")
 			log.Printf("GetAllSources error: %v", err)
 			return
 		}
-		if len(sources) == 0 {
-			b.SendMessage(m.Chat.ID, "Список источников пуст.")
-			return
-		}
-		b.SendMessage(m.Chat.ID, "Источники новостей:\n"+strings.Join(sources, "\n"))
-
-	case strings.HasPrefix(txt, "/subscribe"):
-		parts := strings.Fields(txt)
-		if len(parts) < 2 {
-			b.SendMessage(m.Chat.ID, "Использование: /subscribe <URL>")
-			return
-		}
-		url := parts[1]
-		err := storage.Subscribe(b.db, m.Chat.ID, url)
-		if err != nil {
-			b.SendMessage(m.Chat.ID, "Ошибка при подписке: источник не найден или внутренняя ошибка.")
-			log.Printf("Subscribe error for %d: %v", m.Chat.ID, err)
-			return
-		}
-		b.SendMessage(m.Chat.ID, "Вы подписаны на источник.")
-
-	case strings.HasPrefix(txt, "/unsubscribe"):
-		parts := strings.Fields(txt)
-		if len(parts) < 2 {
-			b.SendMessage(m.Chat.ID, "Использование: /unsubscribe <URL>")
-			return
-		}
-		url := parts[1]
-		err := storage.Unsubscribe(b.db, m.Chat.ID, url)
-		if err != nil {
-			b.SendMessage(m.Chat.ID, "Ошибка при отписке: источник не найден или внутренняя ошибка.")
-			log.Printf("Unsubscribe error for %d: %v", m.Chat.ID, err)
-			return
-		}
-		b.SendMessage(m.Chat.ID, "Вы отписались от источника.")
-
-	case txt == "/mysources":
-		urls, err := storage.GetUserSources(b.db, m.Chat.ID)
+		userSources, err := storage.GetUserSources(b.db, m.Chat.ID)
 		if err != nil {
 			b.SendMessage(m.Chat.ID, "Ошибка при получении ваших подписок.")
-			log.Printf("GetUserSources error for %d: %v", m.Chat.ID, err)
+			log.Printf("GetUserSources error: %v", err)
 			return
 		}
-		if len(urls) == 0 {
-			b.SendMessage(m.Chat.ID, "У вас пока нет подписок.")
-			return
-		}
-		b.SendMessage(m.Chat.ID, "Ваши подписки:\n"+strings.Join(urls, "\n"))
 
+		// Строим инлайн кнопки
+		var buttons [][]tb.InlineButton
+		for _, src := range allSources {
+			displayName := src
+			// Выделяем домен для кнопки
+			if u, err := url.Parse(src); err == nil {
+				displayName = u.Host
+			}
+			prefix := ""
+			if contains(userSources, src) {
+				prefix = "✅ "
+			}
+			btn := tb.InlineButton{
+				Unique: "toggle_sub_" + displayName,
+				Text:   prefix + displayName,
+				Data:   src,
+			}
+			buttons = append(buttons, []tb.InlineButton{btn})
+		}
+
+		b.SendInlineButtons(m.Chat.ID, "Ваши подписки:", buttons)
 	case txt == "/cancel":
 		if _, ok := b.getPending(m.Chat.ID); ok {
 			b.clearPending(m.Chat.ID)
@@ -208,8 +163,17 @@ func (b *Bot) HandleMessage(m *Message) {
 		} else {
 			b.SendMessage(m.Chat.ID, "Нечего отменять.")
 		}
-
 	default:
 		log.Printf("Got message: %s", txt)
 	}
+}
+
+// Вспомогательная функция
+func contains(list []string, s string) bool {
+	for _, v := range list {
+		if v == s {
+			return true
+		}
+	}
+	return false
 }
