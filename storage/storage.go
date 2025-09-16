@@ -5,8 +5,11 @@ import (
     "fmt"
     "log"
     "os"
+    "time"
 
     _ "github.com/lib/pq"
+
+    "github.com/FFFFFFFFFFj/trade-news-bot/rss"
 )
 
 func ConnectDB() (*sql.DB, error) {
