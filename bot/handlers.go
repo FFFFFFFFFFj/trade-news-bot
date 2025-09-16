@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/FFFFFFFFFFj/trade-news-bot/storage"
-	"gopkg.in/telebot.v3"
+	tb "gopkg.in/telebot.v3"
 )
 
 var AdminIDs = map[int64]bool{
@@ -17,7 +17,7 @@ func (b *Bot) IsAdmin(userID int64) bool {
 	return AdminIDs[userID]
 }
 
-func (b *Bot) HandleMessage(m *telebot.Message) {
+func (b *Bot) HandleMessage(m *tb.Message) {
 	txt := strings.TrimSpace(m.Text)
 
 	switch {
@@ -60,20 +60,21 @@ func (b *Bot) HandleMessage(m *telebot.Message) {
 			userSet[s] = true
 		}
 
-		var rows [][]telebot.InlineButton
+		var rows [][]tb.InlineButton
 		for _, src := range allSources {
 			label := src
 			if userSet[src] {
 				label = "✅ " + src
 			}
-			btn := telebot.InlineButton{
+			btn := tb.InlineButton{
 				Text: label,
 				Data: "toggle:" + src,
 			}
-			rows = append(rows, []telebot.InlineButton{btn})
+			rows = append(rows, []tb.InlineButton{btn})
 		}
 
-		_, err := b.bot.Send(m.Chat, "Ваши источники:", &telebot.ReplyMarkup{InlineKeyboard: rows})
+		markup := &tb.ReplyMarkup{InlineKeyboard: rows}
+		_, err := b.bot.Send(m.Chat, "Ваши источники:", markup)
 		if err != nil {
 			log.Printf("Ошибка отправки inline кнопок: %v", err)
 		}
