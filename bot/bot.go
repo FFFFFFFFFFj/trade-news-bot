@@ -29,26 +29,28 @@ func New(token string, db *sql.DB) *Bot {
 		log.Fatalf("Ошибка создания бота: %v", err)
 	}
 
-	wrapper := &Bot{
+	return &Bot{
 		bot:     b,
 		db:      db,
 		pending: make(map[int64]string),
 	}
+}
 
-	// Обработка сообщений
-	b.Handle(tb.OnText, func(c tb.Context) error {
-		return wrapper.HandleMessage(c.Message())
+func (b *Bot) Start() {
+	// Обработка текстовых сообщений
+	b.bot.Handle(tb.OnText, func(c tb.Context) error {
+		return b.HandleMessage(c.Message())
 	})
 
 	// Обработка inline-кнопок
-	b.Handle(tb.OnCallback, func(c tb.Context) error {
+	b.bot.Handle(&tb.Callback{Data: tb.Any}, func(c tb.Context) error {
 		data := c.Callback().Data
 		userID := c.Sender().ID
 
 		if strings.HasPrefix(data, "toggle:") {
 			src := strings.TrimPrefix(data, "toggle:")
 
-			subs, _ := storage.GetUserSources(wrapper.db, userID)
+			subs, _ := storage.GetUserSources(b.db, userID)
 			isSub := false
 			for _, s := range subs {
 				if s == src {
@@ -58,26 +60,24 @@ func New(token string, db *sql.DB) *Bot {
 			}
 
 			if isSub {
-				_ = storage.Unsubscribe(wrapper.db, userID, src)
-				_ = c.Respond(&tb.CallbackResponse{Text: "❌ Отписка"})
+				_ = storage.Unsubscribe(b.db, userID, src)
+				c.Respond(&tb.CallbackResponse{Text: "❌ Отписка"})
 			} else {
-				_ = storage.Subscribe(wrapper.db, userID, src)
-				_ = c.Respond(&tb.CallbackResponse{Text: "✅ Подписка"})
+				_ = storage.Subscribe(b.db, userID, src)
+				c.Respond(&tb.CallbackResponse{Text: "✅ Подписка"})
 			}
 
-			return wrapper.UpdateSourcesButtons(c)
+			return b.UpdateSourcesButtons(c)
 		}
+
 		return nil
 	})
 
-	return wrapper
-}
-
-func (b *Bot) Start() {
 	log.Println("🤖 Бот запущен...")
 	b.bot.Start()
 }
 
+// Обновление inline-кнопок источников
 func (b *Bot) UpdateSourcesButtons(c tb.Context) error {
 	allSources, _ := storage.GetAllSources(b.db)
 	userSources, _ := storage.GetUserSources(b.db, c.Sender().ID)
@@ -105,6 +105,7 @@ func (b *Bot) UpdateSourcesButtons(c tb.Context) error {
 	return b.bot.Edit(c.Message(), "Ваши источники:", markup)
 }
 
+// Обновление новостей в фоне
 func (b *Bot) StartNewsUpdater(interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -126,6 +127,7 @@ func (b *Bot) StartNewsUpdater(interval time.Duration) {
 	}
 }
 
+// Отправка сообщения пользователю
 func (b *Bot) SendMessage(chatID int64, text string) {
 	err := b.bot.Send(tb.ChatID(chatID), text)
 	if err != nil {
@@ -133,6 +135,7 @@ func (b *Bot) SendMessage(chatID int64, text string) {
 	}
 }
 
+// Методы для pending действий (например, подписки)
 func (b *Bot) setPending(chatID int64, action string) {
 	b.pending[chatID] = action
 }
