@@ -1,34 +1,37 @@
 package storage
 
 import (
-	"database/sql"
-	"fmt"
-	"time"
-	_ "github.com/lib/pq"
-	"log"
-	"github.com/FFFFFFFFFFj/trade-news-bot/rss"
+    "database/sql"
+    "fmt"
+    "log"
+    "os"
+
+    _ "github.com/lib/pq"
 )
 
 func ConnectDB() (*sql.DB, error) {
-	// Connection parametrs to your database, replace with real ones
-	user := os.Getenv("DB_USER")
+    user := os.Getenv("DB_USER")
     password := os.Getenv("DB_PASSWORD")
     dbname := os.Getenv("DB_NAME")
     host := os.Getenv("DB_HOST")
     port := os.Getenv("DB_PORT")
-	psqlInfo := fmt.Sprintf("user=%s password=%s dbname=%s host=%s port=%d sslmode=disable", user, password, dbname, host, port)
-	db, err := sql.Open("postgres", psqlInfo)
-	if err != nil {
-		return nil, err
-	}
-	err = db.Ping()
-	if err != nil {
-		return nil, err
-	}
-	log.Println("Successfully connected to PostgresSQL")
-	return db, nil
-}
 
+    psqlInfo := fmt.Sprintf(
+        "user=%s password=%s dbname=%s host=%s port=%s sslmode=disable",
+        user, password, dbname, host, port,
+    )
+
+    db, err := sql.Open("postgres", psqlInfo)
+    if err != nil {
+        return nil, err
+    }
+    err = db.Ping()
+    if err != nil {
+        return nil, err
+    }
+    log.Println("Successfully connected to PostgreSQL")
+    return db, nil
+}
 func Migrate(db *sql.DB) error {
 	queries := []string{
 		`CREATE TABLE IF NOT EXISTS rss_sources (
