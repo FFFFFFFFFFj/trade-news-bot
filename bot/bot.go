@@ -55,7 +55,10 @@ func (b *Bot) Start() {
 
 // ShowSourcesMenu отображает пользователю все источники с кнопками подписки/отписки
 func (b *Bot) ShowSourcesMenu(chatID int64) error {
-	allSources := storage.MustGetAllSources(b.db) // все источники из базы
+	// Создаем пользователя, если его нет
+	_, _ = b.db.Exec(`INSERT INTO users (id) VALUES ($1) ON CONFLICT DO NOTHING`, chatID)
+
+	allSources, _ := storage.GetAllSources(b.db)       // все источники
 	userSources, _ := storage.GetUserSources(b.db, chatID) // подписки пользователя
 
 	userSet := make(map[string]bool)
