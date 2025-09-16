@@ -37,11 +37,13 @@ func New(token string, db *sql.DB) *Bot {
 }
 
 func (b *Bot) Start() {
+	// Обработка текстовых сообщений
 	b.bot.Handle(tb.OnText, func(c tb.Context) error {
 		return b.HandleMessage(c.Message())
 	})
 
-	b.bot.Handle(&tb.Callback{Data: tb.Any}, func(c tb.Context) error {
+	// Обработка всех callback’ов
+	b.bot.Handle(tb.OnCallback, func(c tb.Context) error {
 		data := c.Callback().Data
 		userID := c.Sender().ID
 
