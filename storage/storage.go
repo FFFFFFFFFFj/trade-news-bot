@@ -235,3 +235,26 @@ func MustGetAllSources(db *sql.DB) []string {
 	sources, _ := GetAllSources(db)
 	return sources
 }
+
+// 🔹 Получить последние N новостей (без учета подписок и прочитанного)
+func GetLatestNews(db *sql.DB, limit int) ([]NewsItem, error) {
+	rows, err := db.Query(`
+		SELECT title, link, pub_date
+		FROM news
+		ORDER BY pub_date DESC
+		LIMIT $1`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var items []NewsItem
+	for rows.Next() {
+		var item NewsItem
+		if err := rows.Scan(&item.Title, &item.Link, &item.PubDate); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, nil
+}
