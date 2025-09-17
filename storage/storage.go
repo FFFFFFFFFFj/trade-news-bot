@@ -300,7 +300,7 @@ func GetLatestNewsPageForUser(db *sql.DB, userID int64, page, pageSize int) ([]N
 	var items []NewsItem
 	for rows.Next() {
 		var n NewsItem
-		if err := rows.Scan(&n.Title, &n.Link, &n.PubDate, &n.SourceURL); err != nil {
+		if err := rows.Scan(&n.Title, &n.Link, &n.PubDate, &n.Source); err != nil {
 			return nil, err
 		}
 		items = append(items, n)
