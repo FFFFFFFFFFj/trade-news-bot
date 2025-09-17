@@ -12,9 +12,10 @@ import (
 )
 
 type Bot struct {
-	bot     *tb.Bot
-	db      *sql.DB
-	pending map[int64]string
+	bot        *tb.Bot
+	db         *sql.DB
+	pending    map[int64]string
+	latestPage map[int64]int // страница /latest для каждого пользователя
 }
 
 // New создает нового бота
@@ -33,6 +34,7 @@ func New(token string, db *sql.DB) *Bot {
 		bot:     b,
 		db:      db,
 		pending: make(map[int64]string),
+		latestPage: make(map[int64]int),
 	}
 }
 
