@@ -191,3 +191,31 @@ func (b *Bot) getPending(chatID int64) (string, bool) {
 func (b *Bot) clearPending(chatID int64) {
 	delete(b.pending, chatID)
 }
+// Показывает страницу новостей с кнопками навигации
+func (b *Bot) ShowLatestNews(chatID int64) {
+	page := b.latestPage[chatID]
+	items, _ := storage.GetLatestNewsPage(b.db, page, 4)
+
+	if len(items) == 0 {
+		b.SendMessage(chatID, "Новостей больше нет.")
+		return
+	}
+
+	text := "📰 Последние новости:\n\n"
+	for _, item := range items {
+		text += fmt.Sprintf("• %s\n🔗 %s\n\n", item.Title, item.Link)
+	}
+
+	// Кнопки навигации
+	prevBtn := tb.InlineButton{Text: "⬅️", Data: "latest_prev"}
+	nextBtn := tb.InlineButton{Text: "➡️", Data: "latest_next"}
+	markup := &tb.ReplyMarkup{}
+
+	if page > 1 {
+		markup.InlineKeyboard = append(markup.InlineKeyboard, []tb.InlineButton{prevBtn, nextBtn})
+	} else {
+		markup.InlineKeyboard = append(markup.InlineKeyboard, []tb.InlineButton{nextBtn})
+	}
+
+	b.bot.Send(tb.ChatID(chatID), text, markup)
+}
