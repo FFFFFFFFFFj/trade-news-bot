@@ -25,7 +25,8 @@ func (b *Bot) HandleMessage(m *tb.Message) {
 		subsCount, _ := storage.GetUserSubscriptionCount(b.db, m.Chat.ID)
 		if b.IsAdmin(m.Chat.ID) {
 			activeUsers, _ := storage.GetActiveUsersCount(b.db)
-			msg := fmt.Sprintf("👑 Админ\nID: %d\nАктивных пользователей: %d\nВсего источников: %d", m.Chat.ID, activeUsers, len(storage.MustGetAllSources(b.db)))
+			msg := fmt.Sprintf("👑 Админ\nID: %d\nАктивных пользователей: %d\nВсего источников: %d",
+				m.Chat.ID, activeUsers, len(storage.MustGetAllSources(b.db)))
 			b.SendMessage(m.Chat.ID, msg)
 		} else {
 			msg := fmt.Sprintf("👤 Пользователь\nID: %d\nПодписок: %d", m.Chat.ID, subsCount)
@@ -38,13 +39,6 @@ func (b *Bot) HandleMessage(m *tb.Message) {
 	case txt == "/latest":
 		b.latestPage[m.Chat.ID] = 1
 		b.ShowLatestNews(m.Chat.ID)
-		if len(items) == 0 {
-			b.SendMessage(m.Chat.ID, "В базе пока нет новостей.")
-			return
-		}
-		for _, item := range items {
-			b.SendMessage(m.Chat.ID, fmt.Sprintf("📰 %s\n🔗 %s", item.Title, item.Link))
-		}
 
 	case txt == "/mysources":
 		b.ShowSourcesMenu(m.Chat.ID)
