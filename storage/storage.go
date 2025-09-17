@@ -258,3 +258,26 @@ func GetLatestNews(db *sql.DB, limit int) ([]NewsItem, error) {
 	}
 	return items, nil
 }
+// 🔹 Получить последние новости с пагинацией
+func GetLatestNewsPage(db *sql.DB, page, pageSize int) ([]NewsItem, error) {
+	offset := (page - 1) * pageSize
+	rows, err := db.Query(`
+		SELECT title, link, pub_date
+		FROM news
+		ORDER BY pub_date DESC
+		OFFSET $1 LIMIT $2`, offset, pageSize)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var items []NewsItem
+	for rows.Next() {
+		var item NewsItem
+		if err := rows.Scan(&item.Title, &item.Link, &item.PubDate); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, nil
+}
