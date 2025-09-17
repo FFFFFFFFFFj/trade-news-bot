@@ -40,13 +40,13 @@ func New(token string, db *sql.DB) *Bot {
 
 // Start запускает бота и его обработчики
 func (b *Bot) Start() {
-	// Обработка текстовых сообщений
+	// Текстовые команды
 	b.bot.Handle(tb.OnText, func(c tb.Context) error {
 		b.HandleMessage(c.Message())
 		return nil
 	})
 
-	// Обработка inline-кнопок подписок
+	// Кнопки подписок
 	b.bot.Handle(tb.OnCallback, func(c tb.Context) error {
 		if strings.HasPrefix(c.Callback().Data, "toggle:") {
 			return b.ToggleSource(c)
@@ -54,12 +54,11 @@ func (b *Bot) Start() {
 		return nil
 	})
 
-	// Обработка кнопок навигации новостей
+	// Кнопки навигации новостей
 	b.bot.Handle(&tb.InlineButton{Data: "latest_next"}, func(c tb.Context) error {
 		chatID := c.Sender().ID
 		b.latestPage[chatID]++
-		b.bot.Edit(c.Message(), "Загружаю новости...")
-		b.ShowLatestNews(chatID)
+		b.ShowLatestNews(chatID, c)
 		return nil
 	})
 
@@ -68,8 +67,7 @@ func (b *Bot) Start() {
 		if b.latestPage[chatID] > 1 {
 			b.latestPage[chatID]--
 		}
-		b.bot.Edit(c.Message(), "Загружаю новости...")
-		b.ShowLatestNews(chatID)
+		b.ShowLatestNews(chatID, c)
 		return nil
 	})
 
@@ -77,167 +75,41 @@ func (b *Bot) Start() {
 	b.bot.Start()
 }
 
-// ShowSourcesMenu отображает пользователю все источники с кнопками подписки/отписки
-func (b *Bot) ShowSourcesMenu(chatID int64) error {
-	_, _ = b.db.Exec(`INSERT INTO users (id) VALUES ($1) ON CONFLICT DO NOTHING`, chatID)
-
-	allSources, _ := storage.GetAllSources(b.db)
-	userSources, _ := storage.GetUserSources(b.db, chatID)
-
-	userSet := make(map[string]bool)
-	for _, s := range userSources {
-		userSet[s] = true
-	}
-
-	var rows [][]tb.InlineButton
-	for _, src := range allSources {
-		label := src
-		if userSet[src] {
-			label = "✅ " + label
-		} else {
-			label = "❌ " + label
-		}
-		btn := tb.InlineButton{
-			Text: label,
-			Data: "toggle:" + src,
-		}
-		rows = append(rows, []tb.InlineButton{btn})
-	}
-
-	markup := &tb.ReplyMarkup{InlineKeyboard: rows}
-	_, err := b.bot.Send(tb.ChatID(chatID), "Ваши источники:", markup)
-	return err
-}
-
-// ToggleSource подписывает или отписывает пользователя при нажатии кнопки
-func (b *Bot) ToggleSource(c tb.Context) error {
-	data := c.Callback().Data
-	userID := c.Sender().ID
-
-	if strings.HasPrefix(data, "toggle:") {
-		src := strings.TrimPrefix(data, "toggle:")
-
-		subs, _ := storage.GetUserSources(b.db, userID)
-		isSub := false
-		for _, s := range subs {
-			if s == src {
-				isSub = true
-				break
-			}
-		}
-
-		if isSub {
-			_ = storage.Unsubscribe(b.db, userID, src)
-			_ = c.Respond(&tb.CallbackResponse{Text: "❌ Отписка"})
-		} else {
-			_ = storage.Subscribe(b.db, userID, src)
-			_ = c.Respond(&tb.CallbackResponse{Text: "✅ Подписка"})
-		}
-
-		return b.UpdateSourcesButtons(c)
-	}
-	return nil
-}
-
-// UpdateSourcesButtons обновляет inline-кнопки для источников
-func (b *Bot) UpdateSourcesButtons(c tb.Context) error {
-	allSources := storage.MustGetAllSources(b.db)
-	userSources, _ := storage.GetUserSources(b.db, c.Sender().ID)
-
-	userSet := make(map[string]bool)
-	for _, s := range userSources {
-		userSet[s] = true
-	}
-
-	var rows [][]tb.InlineButton
-	for _, src := range allSources {
-		label := src
-		if userSet[src] {
-			label = "✅ " + label
-		} else {
-			label = "❌ " + label
-		}
-		btn := tb.InlineButton{
-			Text: label,
-			Data: "toggle:" + src,
-		}
-		rows = append(rows, []tb.InlineButton{btn})
-	}
-
-	markup := &tb.ReplyMarkup{InlineKeyboard: rows}
-	_, err := b.bot.Edit(c.Message(), "Ваши источники:", markup)
-	return err
-}
-
-// StartNewsUpdater запускает циклическое обновление новостей
-func (b *Bot) StartNewsUpdater(interval time.Duration) {
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		log.Println("🔄 Проверка новостей...")
-		news, err := storage.FetchAndStoreNews(b.db)
-		if err != nil {
-			log.Printf("Ошибка обновления новостей: %v", err)
-			continue
-		}
-
-		for userID, items := range news {
-			for _, item := range items {
-				msg := fmt.Sprintf("📰 %s\n🔗 %s\n", item.Title, item.Link)
-				_, _ = b.bot.Send(tb.ChatID(userID), msg)
-			}
-		}
-	}
-}
-
-// SendMessage отправляет текстовое сообщение пользователю
-func (b *Bot) SendMessage(chatID int64, text string) {
-	_, err := b.bot.Send(tb.ChatID(chatID), text)
-	if err != nil {
-		log.Printf("Ошибка отправки: %v", err)
-	}
-}
-
-// Управление pending действиями (если нужно)
-func (b *Bot) setPending(chatID int64, action string) {
-	b.pending[chatID] = action
-}
-
-func (b *Bot) getPending(chatID int64) (string, bool) {
-	action, ok := b.pending[chatID]
-	return action, ok
-}
-
-func (b *Bot) clearPending(chatID int64) {
-	delete(b.pending, chatID)
-}
-
-// Показывает страницу новостей с кнопками навигации
-func (b *Bot) ShowLatestNews(chatID int64) {
+// Показывает страницу новостей (по активным подпискам)
+func (b *Bot) ShowLatestNews(chatID int64, c tb.Context) {
 	page := b.latestPage[chatID]
-	items, _ := storage.GetLatestNewsPage(b.db, page, 4)
+
+	// Берем только активные подписки
+	items, _ := storage.GetLatestNewsPageForUser(b.db, chatID, page, 4)
 
 	if len(items) == 0 {
-		b.SendMessage(chatID, "Новостей больше нет.")
+		if c != nil {
+			_, _ = b.bot.Edit(c.Message(), "⚠️ Больше новостей нет по вашим подпискам.")
+		} else {
+			b.SendMessage(chatID, "⚠️ Больше новостей нет по вашим подпискам.")
+		}
 		return
 	}
 
-	text := "📰 Последние новости:\n\n"
+	text := "📰 Последние новости по вашим подпискам:\n\n"
 	for _, item := range items {
 		text += fmt.Sprintf("• %s\n🔗 %s\n\n", item.Title, item.Link)
 	}
 
-	// Кнопки навигации
+	// Кнопки
 	prevBtn := tb.InlineButton{Text: "⬅️", Data: "latest_prev"}
 	nextBtn := tb.InlineButton{Text: "➡️", Data: "latest_next"}
 	markup := &tb.ReplyMarkup{}
 
 	if page > 1 {
-		markup.InlineKeyboard = append(markup.InlineKeyboard, []tb.InlineButton{prevBtn, nextBtn})
+		markup.InlineKeyboard = [][]tb.InlineButton{{prevBtn, nextBtn}}
 	} else {
-		markup.InlineKeyboard = append(markup.InlineKeyboard, []tb.InlineButton{nextBtn})
+		markup.InlineKeyboard = [][]tb.InlineButton{{nextBtn}}
 	}
 
-	b.bot.Send(tb.ChatID(chatID), text, markup)
+	if c != nil {
+		_, _ = b.bot.Edit(c.Message(), text, markup)
+	} else {
+		_, _ = b.bot.Send(tb.ChatID(chatID), text, markup)
+	}
 }
