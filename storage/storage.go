@@ -281,3 +281,28 @@ func GetLatestNewsPage(db *sql.DB, page, pageSize int) ([]NewsItem, error) {
 	}
 	return items, nil
 }
+func GetLatestNewsPageForUser(db *sql.DB, userID int64, page, pageSize int) ([]NewsItem, error) {
+	offset := (page - 1) * pageSize
+
+	rows, err := db.Query(`
+		SELECT title, link, pub_date, source_url
+		FROM news
+		WHERE source_url IN (SELECT source_url FROM subscriptions WHERE user_id = $1)
+		ORDER BY pub_date DESC
+		LIMIT $2 OFFSET $3
+	`, userID, pageSize, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var items []NewsItem
+	for rows.Next() {
+		var n NewsItem
+		if err := rows.Scan(&n.Title, &n.Link, &n.PubDate, &n.SourceURL); err != nil {
+			return nil, err
+		}
+		items = append(items, n)
+	}
+	return items, nil
+}
