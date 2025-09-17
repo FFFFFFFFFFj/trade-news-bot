@@ -14,6 +14,7 @@ type NewsItem struct {
 	Title   string
 	Link    string
 	PubDate time.Time
+	Source  string // ← добавляем сюда URL источника
 }
 
 // 🔹 Подключение к PostgreSQL
