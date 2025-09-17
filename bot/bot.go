@@ -18,7 +18,7 @@ type Bot struct {
 	latestPage map[int64]int // страница /latest для каждого пользователя
 }
 
-// New создает нового бота
+// New создаёт нового бота
 func New(token string, db *sql.DB) *Bot {
 	pref := tb.Settings{
 		Token:  token,
@@ -38,7 +38,7 @@ func New(token string, db *sql.DB) *Bot {
 	}
 }
 
-// Start запускает бота и его обработчики
+// Start запускает бота
 func (b *Bot) Start() {
 	// Текстовые команды
 	b.bot.Handle(tb.OnText, func(c tb.Context) error {
@@ -48,7 +48,8 @@ func (b *Bot) Start() {
 
 	// Кнопки подписок
 	b.bot.Handle(tb.OnCallback, func(c tb.Context) error {
-		if strings.HasPrefix(c.Callback().Data, "toggle:") {
+		data := c.Callback().Data
+		if strings.HasPrefix(data, "toggle:") {
 			return b.ToggleSource(c)
 		}
 		return nil
@@ -61,7 +62,6 @@ func (b *Bot) Start() {
 		b.ShowLatestNews(chatID, c)
 		return nil
 	})
-
 	b.bot.Handle(&tb.InlineButton{Data: "latest_prev"}, func(c tb.Context) error {
 		chatID := c.Sender().ID
 		if b.latestPage[chatID] > 1 {
@@ -75,18 +75,87 @@ func (b *Bot) Start() {
 	b.bot.Start()
 }
 
-// Показывает страницу новостей (по активным подпискам)
+// SendMessage отправляет текстовое сообщение
+func (b *Bot) SendMessage(chatID int64, text string) {
+	_, err := b.bot.Send(tb.ChatID(chatID), text)
+	if err != nil {
+		log.Printf("Ошибка отправки сообщения: %v", err)
+	}
+}
+
+// ShowSourcesMenu отображает меню подписок с кнопками
+func (b *Bot) ShowSourcesMenu(chatID int64) {
+	// создаём пользователя, если нет
+	_, _ = b.db.Exec(`INSERT INTO users (id) VALUES ($1) ON CONFLICT DO NOTHING`, chatID)
+
+	allSources := storage.MustGetAllSources(b.db)
+	userSources, _ := storage.GetUserSources(b.db, chatID)
+	userSet := make(map[string]bool)
+	for _, s := range userSources {
+		userSet[s] = true
+	}
+
+	var rows [][]tb.InlineButton
+	for _, src := range allSources {
+		label := src
+		if userSet[src] {
+			label = "✅ " + label
+		} else {
+			label = "❌ " + label
+		}
+		btn := tb.InlineButton{
+			Text: label,
+			Data: "toggle:" + src,
+		}
+		rows = append(rows, []tb.InlineButton{btn})
+	}
+
+	markup := &tb.ReplyMarkup{InlineKeyboard: rows}
+	_, _ = b.bot.Send(tb.ChatID(chatID), "Ваши источники:", markup)
+}
+
+// ToggleSource подписка/отписка при нажатии кнопки
+func (b *Bot) ToggleSource(c tb.Context) error {
+	data := c.Callback().Data
+	userID := c.Sender().ID
+
+	if strings.HasPrefix(data, "toggle:") {
+		src := strings.TrimPrefix(data, "toggle:")
+
+		subs, _ := storage.GetUserSources(b.db, userID)
+		isSub := false
+		for _, s := range subs {
+			if s == src {
+				isSub = true
+				break
+			}
+		}
+
+		if isSub {
+			_ = storage.Unsubscribe(b.db, userID, src)
+			_ = c.Respond(&tb.CallbackResponse{Text: "❌ Отписка"})
+		} else {
+			_ = storage.Subscribe(b.db, userID, src)
+			_ = c.Respond(&tb.CallbackResponse{Text: "✅ Подписка"})
+		}
+
+		// Обновляем кнопки
+		b.ShowSourcesMenu(userID)
+	}
+	return nil
+}
+
+// ShowLatestNews показывает страницу новостей с кнопками навигации
 func (b *Bot) ShowLatestNews(chatID int64, c tb.Context) {
 	page := b.latestPage[chatID]
-
-	// Берем только активные подписки
 	items, _ := storage.GetLatestNewsPageForUser(b.db, chatID, page, 4)
 
 	if len(items) == 0 {
+		msg := "⚠️ Больше новостей нет по вашим подпискам."
 		if c != nil {
-			_, _ = b.bot.Edit(c.Message(), "⚠️ Больше новостей нет по вашим подпискам.")
+			_, _ = b.bot.Edit(c.Message(), msg)
 		} else {
-			b.SendMessage(chatID, "⚠️ Больше новостей нет по вашим подпискам.")
+			b.SendMessage(chatID, msg)
 		}
 		return
 	}
@@ -96,7 +165,6 @@ func (b *Bot) ShowLatestNews(chatID int64, c tb.Context) {
 		text += fmt.Sprintf("• %s\n🔗 %s\n\n", item.Title, item.Link)
 	}
 
-	// Кнопки
 	prevBtn := tb.InlineButton{Text: "⬅️", Data: "latest_prev"}
 	nextBtn := tb.InlineButton{Text: "➡️", Data: "latest_next"}
 	markup := &tb.ReplyMarkup{}
