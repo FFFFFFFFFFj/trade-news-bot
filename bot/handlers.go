@@ -36,14 +36,13 @@ func (b *Bot) HandleMessage(m *tb.Message) {
 		b.SendMessage(m.Chat.ID, "Доступные команды:\n/start\n/help\n/latest\n/mysources")
 
 	case txt == "/latest":
-		items, _ := storage.GetUnreadNews(b.db, m.Chat.ID, 5)
+		items, _ := storage.GetLatestNews(b.db, 4)
 		if len(items) == 0 {
-			b.SendMessage(m.Chat.ID, "Нет новых новостей.")
+			b.SendMessage(m.Chat.ID, "В базе пока нет новостей.")
 			return
 		}
 		for _, item := range items {
 			b.SendMessage(m.Chat.ID, fmt.Sprintf("📰 %s\n🔗 %s", item.Title, item.Link))
-			_ = storage.MarkNewsAsRead(b.db, m.Chat.ID, item.Link)
 		}
 
 	case txt == "/mysources":
