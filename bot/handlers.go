@@ -20,29 +20,27 @@ func (b *Bot) IsAdmin(userID int64) bool {
 func (b *Bot) HandleMessage(m *tb.Message) {
 	txt := strings.TrimSpace(m.Text)
 
-	switch {
-	case txt == "/start":
+	switch txt {
+	case "/start":
 		subsCount, _ := storage.GetUserSubscriptionCount(b.db, m.Chat.ID)
 		if b.IsAdmin(m.Chat.ID) {
 			activeUsers, _ := storage.GetActiveUsersCount(b.db)
-			msg := fmt.Sprintf(
-				"👑 Админ\nID: %d\nАктивных пользователей: %d\nВсего источников: %d",
-				m.Chat.ID, activeUsers, len(storage.MustGetAllSources(b.db)),
-			)
+			msg := fmt.Sprintf("👑 Админ\nID: %d\nАктивных пользователей: %d\nВсего источников: %d",
+				m.Chat.ID, activeUsers, len(storage.MustGetAllSources(b.db)))
 			b.SendMessage(m.Chat.ID, msg)
 		} else {
 			msg := fmt.Sprintf("👤 Пользователь\nID: %d\nПодписок: %d", m.Chat.ID, subsCount)
 			b.SendMessage(m.Chat.ID, msg)
 		}
 
-	case txt == "/help":
+	case "/help":
 		b.SendMessage(m.Chat.ID, "Доступные команды:\n/start\n/help\n/latest\n/mysources")
 
-	case txt == "/latest":
+	case "/latest":
 		b.latestPage[m.Chat.ID] = 1
 		b.ShowLatestNews(m.Chat.ID, nil)
 
-	case txt == "/mysources":
+	case "/mysources":
 		b.ShowSourcesMenu(m.Chat.ID)
 
 	default:
