@@ -36,7 +36,8 @@ func (b *Bot) HandleMessage(m *tb.Message) {
 		b.SendMessage(m.Chat.ID, "Доступные команды:\n/start\n/help\n/latest\n/mysources")
 
 	case txt == "/latest":
-		items, _ := storage.GetLatestNews(b.db, 4)
+		b.latestPage[m.Chat.ID] = 1
+		b.ShowLatestNews(m.Chat.ID)
 		if len(items) == 0 {
 			b.SendMessage(m.Chat.ID, "В базе пока нет новостей.")
 			return
