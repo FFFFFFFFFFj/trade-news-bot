@@ -31,9 +31,9 @@ func New(token string, db *sql.DB) *Bot {
 	}
 
 	return &Bot{
-		bot:     b,
-		db:      db,
-		pending: make(map[int64]string),
+		bot:        b,
+		db:         db,
+		pending:    make(map[int64]string),
 		latestPage: make(map[int64]int),
 	}
 }
@@ -46,9 +46,31 @@ func (b *Bot) Start() {
 		return nil
 	})
 
-	// Обработка inline-кнопок
+	// Обработка inline-кнопок подписок
 	b.bot.Handle(tb.OnCallback, func(c tb.Context) error {
-		return b.ToggleSource(c)
+		if strings.HasPrefix(c.Callback().Data, "toggle:") {
+			return b.ToggleSource(c)
+		}
+		return nil
+	})
+
+	// Обработка кнопок навигации новостей
+	b.bot.Handle(&tb.InlineButton{Data: "latest_next"}, func(c tb.Context) error {
+		chatID := c.Sender().ID
+		b.latestPage[chatID]++
+		b.bot.Edit(c.Message(), "Загружаю новости...")
+		b.ShowLatestNews(chatID)
+		return nil
+	})
+
+	b.bot.Handle(&tb.InlineButton{Data: "latest_prev"}, func(c tb.Context) error {
+		chatID := c.Sender().ID
+		if b.latestPage[chatID] > 1 {
+			b.latestPage[chatID]--
+		}
+		b.bot.Edit(c.Message(), "Загружаю новости...")
+		b.ShowLatestNews(chatID)
+		return nil
 	})
 
 	log.Println("🤖 Бот запущен...")
@@ -57,11 +79,10 @@ func (b *Bot) Start() {
 
 // ShowSourcesMenu отображает пользователю все источники с кнопками подписки/отписки
 func (b *Bot) ShowSourcesMenu(chatID int64) error {
-	// Создаем пользователя, если его нет
 	_, _ = b.db.Exec(`INSERT INTO users (id) VALUES ($1) ON CONFLICT DO NOTHING`, chatID)
 
-	allSources, _ := storage.GetAllSources(b.db)       // все источники
-	userSources, _ := storage.GetUserSources(b.db, chatID) // подписки пользователя
+	allSources, _ := storage.GetAllSources(b.db)
+	userSources, _ := storage.GetUserSources(b.db, chatID)
 
 	userSet := make(map[string]bool)
 	for _, s := range userSources {
@@ -191,6 +212,7 @@ func (b *Bot) getPending(chatID int64) (string, bool) {
 func (b *Bot) clearPending(chatID int64) {
 	delete(b.pending, chatID)
 }
+
 // Показывает страницу новостей с кнопками навигации
 func (b *Bot) ShowLatestNews(chatID int64) {
 	page := b.latestPage[chatID]
