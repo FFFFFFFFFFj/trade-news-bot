@@ -181,3 +181,24 @@ func (b *Bot) ShowLatestNews(chatID int64, c tb.Context) {
 		_, _ = b.bot.Send(tb.ChatID(chatID), text, markup)
 	}
 }
+// StartNewsUpdater запускает циклическое обновление новостей
+func (b *Bot) StartNewsUpdater(interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		log.Println("🔄 Проверка новостей...")
+		newsMap, err := storage.FetchAndStoreNews(b.db)
+		if err != nil {
+			log.Printf("Ошибка обновления новостей: %v", err)
+			continue
+		}
+
+		for userID, items := range newsMap {
+			for _, item := range items {
+				msg := fmt.Sprintf("📰 %s\n🔗 %s\n", item.Title, item.Link)
+				_, _ = b.bot.Send(tb.ChatID(userID), msg)
+			}
+		}
+	}
+}
