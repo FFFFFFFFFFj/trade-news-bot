@@ -331,6 +331,69 @@ func (b *Bot) HandleAutopost(c tb.Context) error {
     return nil
 }
 
+// ShowSourcesAdminMenu — админ-меню управления источниками
+func (b *Bot) ShowSourcesAdminMenu(chatID int64) {
+    allSources := storage.MustGetAllSources(b.db)
+
+    var rows [][]tb.InlineButton
+    for _, src := range allSources {
+        btn := tb.InlineButton{
+            Text: "❌ " + src,
+            Data: "source:confirmremove:" + src,
+        }
+        rows = append(rows, []tb.InlineButton{btn})
+    }
+
+    // кнопка добавить
+    rows = append(rows, []tb.InlineButton{
+        {Text: "➕ Добавить источник", Data: "source:add"},
+    })
+
+    markup := &tb.ReplyMarkup{InlineKeyboard: rows}
+    b.bot.Send(tb.ChatID(chatID), "📡 Управление источниками:", markup)
+}
+
+// HandleSourceCallback — обработка кнопок управления источниками
+func (b *Bot) HandleSourceCallback(c tb.Context) error {
+    data := c.Callback().Data
+    userID := c.Sender().ID
+
+    if !b.IsAdmin(userID) {
+        return c.Respond(&tb.CallbackResponse{Text: "⛔ Нет доступа"})
+    }
+
+    switch {
+    case strings.HasPrefix(data, "source:confirmremove:"):
+        url := strings.TrimPrefix(data, "source:confirmremove:")
+        markup := &tb.ReplyMarkup{
+            InlineKeyboard: [][]tb.InlineButton{
+                {
+                    {Text: "✅ Да", Data: "source:remove:" + url},
+                    {Text: "❌ Нет", Data: "source:cancel"},
+                },
+            },
+        }
+        _, _ = b.bot.Edit(c.Message(), fmt.Sprintf("Удалить источник?\n%s", url), markup)
+
+    case strings.HasPrefix(data, "source:remove:"):
+        url := strings.TrimPrefix(data, "source:remove:")
+        _ = storage.RemoveSource(b.db, url)
+        _ = c.Respond(&tb.CallbackResponse{Text: "🗑 Удалено"})
+        b.ShowSourcesAdminMenu(userID)
+
+    case data == "source:cancel":
+        _ = c.Respond(&tb.CallbackResponse{Text: "❌ Отменено"})
+        b.ShowSourcesAdminMenu(userID)
+
+    case data == "source:add":
+        b.pending[userID] = "add_source"
+        _ = c.Respond(&tb.CallbackResponse{Text: "Введите ссылку на RSS"})
+        b.SendMessage(userID, "✍️ Отправьте ссылку на RSS-источник:")
+
+    }
+    return nil
+}
+
 // StartNewsUpdater запускает авторассылку по расписанию пользователей
 func (b *Bot) StartNewsUpdater() {
 	loc, _ := time.LoadLocation("Europe/Moscow")
