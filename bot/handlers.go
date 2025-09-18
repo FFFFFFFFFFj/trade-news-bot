@@ -42,8 +42,6 @@ func (b *Bot) HandleMessage(m *tb.Message) {
 		"/autopost – настройка авторассылки (0–6 раз в день, время по Москве)\n" +
         "Можно также указать вручную: /autopost 10:30 15:45\n")
 
-	//case "/autopost":
-		//b.ShowAutopostMenu(m.Chat.ID)
 	case strings.HasPrefix(txt, "/autopost "):
     	parts := strings.Fields(txt)[1:]
     	var validTimes []string
@@ -58,7 +56,10 @@ func (b *Bot) HandleMessage(m *tb.Message) {
         	_ = storage.SetUserAutopost(b.db, m.Chat.ID, validTimes)
         	b.SendMessage(m.Chat.ID, "✅ Время авторассылки обновлено: "+strings.Join(validTimes, ", "))
     	}
-
+		
+	case "/autopost":
+		b.ShowAutopostMenu(m.Chat.ID)
+	
 	case "/latest":
 		b.SendMessage(m.Chat.ID, "⏳ Загружаю сегодняшние новости...")
 		b.latestPage[m.Chat.ID] = 1
