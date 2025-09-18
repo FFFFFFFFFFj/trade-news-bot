@@ -18,33 +18,35 @@ func (b *Bot) IsAdmin(userID int64) bool {
 }
 
 func (b *Bot) HandleMessage(m *tb.Message) {
-	// Гарантируем, что пользователь есть в таблице users (чтобы считать "сколько запустило бота")
+	// сохраняем пользователя в базе
 	_, _ = b.db.Exec(`INSERT INTO users (id) VALUES ($1) ON CONFLICT DO NOTHING`, m.Chat.ID)
 
 	txt := strings.TrimSpace(m.Text)
 
-	// используем if-else чтобы корректно работать с HasPrefix для /autopost 09:00 ...
 	if txt == "/start" {
 		subsCount, _ := storage.GetUserSubscriptionCount(b.db, m.Chat.ID)
 		if b.IsAdmin(m.Chat.ID) {
 			usersCount, _ := storage.GetUsersCount(b.db)
 			activeUsers, _ := storage.GetActiveUsersCount(b.db)
 			autopostUsers, _ := storage.GetAutopostUsersCount(b.db)
-			msg := fmt.Sprintf("👑 Админ\nID: %d\n\nВсего пользователей (запустили бота): %d\nПодписанных (хотя бы на 1): %d\nС автопостом: %d\n\nВсего источников: %d",
+			msg := fmt.Sprintf("👑 Админ\nID: %d\n\nВсего пользователей: %d\nПодписанных: %d\nС автопостом: %d\n\nВсего источников: %d",
 				m.Chat.ID, usersCount, activeUsers, autopostUsers, len(storage.MustGetAllSources(b.db)))
 			b.SendMessage(m.Chat.ID, msg)
+
+			// показываем админ-меню
+			b.ShowAdminMenu(m.Chat.ID)
 		} else {
 			msg := fmt.Sprintf("👤 Пользователь\nID: %d\nПодписок: %d", m.Chat.ID, subsCount)
 			b.SendMessage(m.Chat.ID, msg)
 		}
 
 	} else if txt == "/help" {
-		b.SendMessage(m.Chat.ID, "Доступные команды:\n" +
-			"/start – информация о вас\n" +
-			"/help – список команд\n" +
-			"/latest – новости за сегодня с пагинацией\n" +
-			"/mysources – управление подписками\n" +
-			"/autopost – настройка авторассылки (0–6 раз в день, время по Москве)\n" +
+		b.SendMessage(m.Chat.ID, "Доступные команды:\n"+
+			"/start – информация о вас\n"+
+			"/help – список команд\n"+
+			"/latest – новости за сегодня с пагинацией\n"+
+			"/mysources – управление подписками\n"+
+			"/autopost – настройка авторассылки (0–6 раз в день, время по Москве)\n"+
 			"Можно также указать вручную: /autopost 10:30 15:45\n")
 
 	} else if strings.HasPrefix(txt, "/autopost ") {
@@ -74,6 +76,11 @@ func (b *Bot) HandleMessage(m *tb.Message) {
 
 	} else if txt == "/mysources" {
 		b.ShowSourcesMenu(m.Chat.ID)
+
+	} else if strings.HasPrefix(txt, "/post ") && b.IsAdmin(m.Chat.ID) {
+		// публикация поста от имени бота
+		content := strings.TrimPrefix(txt, "/post ")
+		b.BroadcastMessage(content)
 
 	} else {
 		log.Printf("Сообщение: %s", txt)
