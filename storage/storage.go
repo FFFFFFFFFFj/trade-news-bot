@@ -142,10 +142,25 @@ func GetUserSubscriptionCount(db *sql.DB, userID int64) (int, error) {
 	return count, err
 }
 
-// 🔹 Кол-во активных пользователей
+// 🔹 Кол-во активных пользователей (подписанных хотя бы на 1 источник)
 func GetActiveUsersCount(db *sql.DB) (int, error) {
 	var count int
 	err := db.QueryRow(`SELECT COUNT(DISTINCT user_id) FROM subscriptions`).Scan(&count)
+	return count, err
+}
+
+// 🔹 Общее кол-во пользователей (те, кто запустил бота)
+func GetUsersCount(db *sql.DB) (int, error) {
+	var count int
+	err := db.QueryRow(`SELECT COUNT(*) FROM users`).Scan(&count)
+	return count, err
+}
+
+// 🔹 Кол-во пользователей, у которых включён автопост (times != empty)
+func GetAutopostUsersCount(db *sql.DB) (int, error) {
+	var count int
+	// times хранится как JSON string; считаем только те записи, где times не пустой JSON array "[]"
+	err := db.QueryRow(`SELECT COUNT(*) FROM user_autopost WHERE times IS NOT NULL AND times <> '[]'`).Scan(&count)
 	return count, err
 }
 
