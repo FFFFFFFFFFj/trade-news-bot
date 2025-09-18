@@ -152,13 +152,18 @@ func (b *Bot) ToggleSource(c tb.Context) error {
 	return nil
 }
 
-// ShowLatestNews показывает страницу новостей с кнопками навигации
+// ShowLatestNews показывает страницу новостей по подпискам за сегодня
 func (b *Bot) ShowLatestNews(chatID int64, c tb.Context) {
 	page := b.latestPage[chatID]
-	items, _ := storage.GetLatestNewsPageForUser(b.db, chatID, page, 4)
+	pageSize := 4
 
-	if len(items) == 0 {
-		msg := "⚠️ Больше новостей нет по вашим подпискам."
+	// всего новостей за сегодня
+	totalCount, _ := storage.GetTodayNewsCountForUser(b.db, chatID)
+
+	// считаем количество страниц
+	totalPages := (totalCount + pageSize - 1) / pageSize
+	if totalPages == 0 {
+		msg := "⚠️ Сегодня новостей по вашим подпискам нет."
 		if c != nil {
 			_, _ = b.bot.Edit(c.Message(), msg)
 		} else {
@@ -167,18 +172,45 @@ func (b *Bot) ShowLatestNews(chatID int64, c tb.Context) {
 		return
 	}
 
-	text := "📰 Последние новости по вашим подпискам:\n\n"
+	// если пользователь перелистал дальше
+	if page > totalPages {
+		b.latestPage[chatID] = totalPages
+		page = totalPages
+	}
+
+	// получаем новости за сегодня с пагинацией
+	items, _ := storage.GetTodayNewsPageForUser(b.db, chatID, page, pageSize)
+
+	if len(items) == 0 {
+		msg := "⚠️ Больше новостей за сегодня нет."
+		if c != nil {
+			_, _ = b.bot.Edit(c.Message(), msg)
+		} else {
+			b.SendMessage(chatID, msg)
+		}
+		return
+	}
+
+	// формируем текст
+	text := fmt.Sprintf("📰 Новости за сегодня (страница %d из %d):\n\n", page, totalPages)
 	for _, item := range items {
 		text += fmt.Sprintf("• %s\n🔗 %s\n\n", item.Title, item.Link)
 	}
 
+	// кнопки
 	markup := &tb.ReplyMarkup{}
+	var row []tb.InlineButton
 	if page > 1 {
-		markup.InlineKeyboard = [][]tb.InlineButton{{b.btnPrev, b.btnNext}}
-	} else {
-		markup.InlineKeyboard = [][]tb.InlineButton{{b.btnNext}}
+		row = append(row, b.btnPrev)
+	}
+	if page < totalPages {
+		row = append(row, b.btnNext)
+	}
+	if len(row) > 0 {
+		markup.InlineKeyboard = [][]tb.InlineButton{row}
 	}
 
+	// вывод
 	if c != nil {
 		_, _ = b.bot.Edit(c.Message(), text, markup)
 	} else {
