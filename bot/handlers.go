@@ -9,12 +9,14 @@ import (
 	tb "gopkg.in/telebot.v3"
 )
 
+// HandleMessage обрабатывает все входящие текстовые сообщения
 func (b *Bot) HandleMessage(m *tb.Message) {
 	userID := m.Chat.ID
 	_, _ = b.db.Exec(`INSERT INTO users (id) VALUES ($1) ON CONFLICT DO NOTHING`, userID)
+
 	txt := strings.TrimSpace(m.Text)
 
-	// Проверяем, ожидает ли админ ввод URL или сообщение для рассылки
+	// Проверяем, ожидает ли админ ввод URL или сообщения для рассылки
 	if mode, ok := b.pending[userID]; ok && b.IsAdmin(userID) {
 		switch mode {
 		case "addsource":
@@ -27,8 +29,9 @@ func (b *Bot) HandleMessage(m *tb.Message) {
 			} else {
 				b.SendMessage(userID, "✅ Источник добавлен: "+txt)
 			}
-			b.pending[userID] = ""
+			b.pending[userID] = "" // сброс режима
 			return
+
 		case "removesource":
 			if txt == "" {
 				b.SendMessage(userID, "⚠️ URL пустой")
@@ -39,15 +42,17 @@ func (b *Bot) HandleMessage(m *tb.Message) {
 			} else {
 				b.SendMessage(userID, "✅ Источник удалён: "+txt)
 			}
-			b.pending[userID] = ""
+			b.pending[userID] = "" // сброс режима
 			return
+
 		case "broadcast":
 			if txt == "" {
 				b.SendMessage(userID, "⚠️ Сообщение пустое")
 				return
 			}
-			b.pending[userID] = txt
-			b.HandleAdminBroadcast(&tb.Callback{Sender: m.Sender}) // вызов рассылки
+			count := b.BroadcastMessageToAll(txt)
+			b.SendMessage(userID, fmt.Sprintf("✅ Сообщение разослано %d пользователям", count))
+			b.pending[userID] = "" // сброс режима
 			return
 		}
 	}
@@ -55,7 +60,6 @@ func (b *Bot) HandleMessage(m *tb.Message) {
 	switch {
 	case txt == "/start":
 		if b.IsAdmin(userID) {
-			b.ShowAdminMenu(userID) // Показываем админские кнопки
 			usersCount, _ := storage.GetUsersCount(b.db)
 			activeUsers, _ := storage.GetActiveUsersCount(b.db)
 			autopostUsers, _ := storage.GetAutopostUsersCount(b.db)
@@ -74,7 +78,14 @@ func (b *Bot) HandleMessage(m *tb.Message) {
 			"/help – список команд\n"+
 			"/latest – новости за сегодня\n"+
 			"/mysources – управление подписками\n"+
-			"/autopost – настройка авторассылки\n")
+			"/autopost – настройка авторассылки\n"+
+			"Админ:\n"+
+			"/addsource – добавить источник\n"+
+			"/removesource – удалить источник\n"+
+			"/broadcast – рассылка всем\n")
+
+	case txt == "/autopost":
+		b.ShowAutopostMenu(userID)
 
 	case strings.HasPrefix(txt, "/autopost "):
 		parts := strings.Fields(txt)[1:]
@@ -93,9 +104,6 @@ func (b *Bot) HandleMessage(m *tb.Message) {
 			b.SendMessage(userID, "✅ Время авторассылки обновлено: "+strings.Join(validTimes, ", "))
 		}
 
-	case txt == "/autopost":
-		b.ShowAutopostMenu(userID)
-
 	case txt == "/latest":
 		b.latestPage[userID] = 1
 		b.ShowLatestNews(userID, nil)
@@ -103,50 +111,51 @@ func (b *Bot) HandleMessage(m *tb.Message) {
 	case txt == "/mysources":
 		b.ShowSourcesMenu(userID)
 
+	case txt == "/addsource":
+		if !b.IsAdmin(userID) {
+			b.SendMessage(userID, "⚠️ Нет доступа")
+			return
+		}
+		b.pending[userID] = "addsource"
+		b.SendMessage(userID, "Введите URL нового источника:")
+
+	case txt == "/removesource":
+		if !b.IsAdmin(userID) {
+			b.SendMessage(userID, "⚠️ Нет доступа")
+			return
+		}
+		b.pending[userID] = "removesource"
+		b.SendMessage(userID, "Введите URL источника для удаления:")
+
+	case txt == "/broadcast":
+		if !b.IsAdmin(userID) {
+			b.SendMessage(userID, "⚠️ Нет доступа")
+			return
+		}
+		b.pending[userID] = "broadcast"
+		b.SendMessage(userID, "Введите текст для рассылки всем пользователям:")
+
 	default:
 		log.Printf("Сообщение: %s", txt)
 	}
 }
 
-// ---------------------- Админское меню с кнопками ----------------------
-
-func (b *Bot) ShowAdminMenu(chatID int64) {
-	if !b.IsAdmin(chatID) {
-		return
+// BroadcastMessageToAll разсылает текстовое сообщение всем пользователям
+func (b *Bot) BroadcastMessageToAll(msg string) int {
+	rows, err := b.db.Query(`SELECT id FROM users`)
+	if err != nil {
+		log.Printf("Ошибка получения пользователей: %v", err)
+		return 0
 	}
+	defer rows.Close()
 
-	markup := &tb.ReplyMarkup{}
-	btnAdd := tb.InlineButton{
-		Unique: "admin_addsource",
-		Text:   "➕ Добавить источник",
+	count := 0
+	for rows.Next() {
+		var uid int64
+		if err := rows.Scan(&uid); err == nil {
+			b.SendMessage(uid, msg)
+			count++
+		}
 	}
-	btnRemove := tb.InlineButton{
-		Unique: "admin_removesource",
-		Text:   "➖ Удалить источник",
-	}
-	btnBroadcast := tb.InlineButton{
-		Unique: "admin_broadcast",
-		Text:   "📢 Рассылка всем",
-	}
-
-	markup.InlineKeyboard = [][]tb.InlineButton{
-		{btnAdd, btnRemove},
-		{btnBroadcast},
-	}
-
-	_, _ = b.bot.Send(tb.ChatID(chatID), "👑 Админ-меню:", markup)
-
-	// Привязка кнопок к режимам pending
-	b.bot.Handle(&btnAdd, func(c tb.Context) error {
-		b.pending[chatID] = "addsource"
-		return c.Respond(&tb.CallbackResponse{Text: "Введите URL для добавления источника"})
-	})
-	b.bot.Handle(&btnRemove, func(c tb.Context) error {
-		b.pending[chatID] = "removesource"
-		return c.Respond(&tb.CallbackResponse{Text: "Введите URL для удаления источника"})
-	})
-	b.bot.Handle(&btnBroadcast, func(c tb.Context) error {
-		b.pending[chatID] = "broadcast"
-		return c.Respond(&tb.CallbackResponse{Text: "Введите сообщение для рассылки"})
-	})
+	return count
 }
