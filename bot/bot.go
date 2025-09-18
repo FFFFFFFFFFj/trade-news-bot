@@ -16,6 +16,9 @@ type Bot struct {
 	db         *sql.DB
 	pending    map[int64]string
 	latestPage map[int64]int // страница /latest для каждого пользователя
+
+	btnPrev tb.InlineButton
+	btnNext tb.InlineButton
 }
 
 // New создаёт нового бота
@@ -30,12 +33,32 @@ func New(token string, db *sql.DB) *Bot {
 		log.Fatalf("Ошибка создания бота: %v", err)
 	}
 
-	return &Bot{
+	bot := &Bot{
 		bot:        b,
 		db:         db,
 		pending:    make(map[int64]string),
 		latestPage: make(map[int64]int),
+		btnPrev:    tb.InlineButton{Unique: "latest_prev", Text: "⬅️"},
+		btnNext:    tb.InlineButton{Unique: "latest_next", Text: "➡️"},
 	}
+
+	// регистрируем обработчики кнопок переключения
+	b.Handle(&bot.btnNext, func(c tb.Context) error {
+		chatID := c.Sender().ID
+		bot.latestPage[chatID]++
+		bot.ShowLatestNews(chatID, c)
+		return nil
+	})
+	b.Handle(&bot.btnPrev, func(c tb.Context) error {
+		chatID := c.Sender().ID
+		if bot.latestPage[chatID] > 1 {
+			bot.latestPage[chatID]--
+		}
+		bot.ShowLatestNews(chatID, c)
+		return nil
+	})
+
+	return bot
 }
 
 // Start запускает бота
@@ -52,22 +75,6 @@ func (b *Bot) Start() {
 		if strings.HasPrefix(data, "toggle:") {
 			return b.ToggleSource(c)
 		}
-		return nil
-	})
-
-	// Кнопки навигации новостей
-	b.bot.Handle(&tb.InlineButton{Data: "latest_next"}, func(c tb.Context) error {
-		chatID := c.Sender().ID
-		b.latestPage[chatID]++
-		b.ShowLatestNews(chatID, c)
-		return nil
-	})
-	b.bot.Handle(&tb.InlineButton{Data: "latest_prev"}, func(c tb.Context) error {
-		chatID := c.Sender().ID
-		if b.latestPage[chatID] > 1 {
-			b.latestPage[chatID]--
-		}
-		b.ShowLatestNews(chatID, c)
 		return nil
 	})
 
@@ -165,14 +172,11 @@ func (b *Bot) ShowLatestNews(chatID int64, c tb.Context) {
 		text += fmt.Sprintf("• %s\n🔗 %s\n\n", item.Title, item.Link)
 	}
 
-	prevBtn := tb.InlineButton{Text: "⬅️", Data: "latest_prev"}
-	nextBtn := tb.InlineButton{Text: "➡️", Data: "latest_next"}
 	markup := &tb.ReplyMarkup{}
-
 	if page > 1 {
-		markup.InlineKeyboard = [][]tb.InlineButton{{prevBtn, nextBtn}}
+		markup.InlineKeyboard = [][]tb.InlineButton{{b.btnPrev, b.btnNext}}
 	} else {
-		markup.InlineKeyboard = [][]tb.InlineButton{{nextBtn}}
+		markup.InlineKeyboard = [][]tb.InlineButton{{b.btnNext}}
 	}
 
 	if c != nil {
@@ -181,6 +185,7 @@ func (b *Bot) ShowLatestNews(chatID int64, c tb.Context) {
 		_, _ = b.bot.Send(tb.ChatID(chatID), text, markup)
 	}
 }
+
 // StartNewsUpdater запускает циклическое обновление новостей
 func (b *Bot) StartNewsUpdater(interval time.Duration) {
 	ticker := time.NewTicker(interval)
