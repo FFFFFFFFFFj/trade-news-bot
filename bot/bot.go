@@ -50,7 +50,11 @@ func New(token string, db *sql.DB) *Bot {
 		btnPrev:  tb.InlineButton{Unique: "latest_prev", Text: "⬅️"},
 		btnNext:  tb.InlineButton{Unique: "latest_next", Text: "➡️"},
 		btnLast:  tb.InlineButton{Unique: "latest_last", Text: "⏭"},
+		
 	}
+	b.Handle(&b.btnAddSource, b.HandleAdminSource)
+	b.Handle(&b.btnRemoveSource, b.HandleAdminSource)
+	b.Handle(&b.btnBroadcast, b.HandleAdminBroadcast)
 
 	// Кнопки навигации для /latest
 	b.Handle(&botInstance.btnFirst, func(c tb.Context) error {
@@ -200,11 +204,6 @@ func (b *Bot) HandleAdminBroadcast(c tb.Context) error {
 	return c.Respond(&tb.CallbackResponse{Text: fmt.Sprintf("✅ Сообщение разослано %d пользователям", count)})
 }
 
-// ---------------------- Вызов админских функций ----------------------
-// Добавляем обработку callback кнопок для админа в New():
-b.Handle(&b.btnAddSource, b.HandleAdminSource)
-b.Handle(&b.btnRemoveSource, b.HandleAdminSource)
-b.Handle(&b.btnBroadcast, b.HandleAdminBroadcast)
 // ShowSourcesMenu отображает меню подписок с кнопками
 func (b *Bot) ShowSourcesMenu(chatID int64) {
 	_, _ = b.db.Exec(`INSERT INTO users (id) VALUES ($1) ON CONFLICT DO NOTHING`, chatID)
