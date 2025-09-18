@@ -17,8 +17,11 @@ type Bot struct {
 	pending    map[int64]string
 	latestPage map[int64]int // страница /latest для каждого пользователя
 
-	btnPrev tb.InlineButton
-	btnNext tb.InlineButton
+	// кнопки для навигации
+	btnFirst tb.InlineButton
+	btnPrev  tb.InlineButton
+	btnNext  tb.InlineButton
+	btnLast  tb.InlineButton
 }
 
 // New создаёт нового бота
@@ -38,14 +41,17 @@ func New(token string, db *sql.DB) *Bot {
 		db:         db,
 		pending:    make(map[int64]string),
 		latestPage: make(map[int64]int),
-		btnPrev:    tb.InlineButton{Unique: "latest_prev", Text: "⬅️"},
-		btnNext:    tb.InlineButton{Unique: "latest_next", Text: "➡️"},
+
+		btnFirst: tb.InlineButton{Unique: "latest_first", Text: "⏮"},
+		btnPrev:  tb.InlineButton{Unique: "latest_prev", Text: "⬅️"},
+		btnNext:  tb.InlineButton{Unique: "latest_next", Text: "➡️"},
+		btnLast:  tb.InlineButton{Unique: "latest_last", Text: "⏭"},
 	}
 
-	// регистрируем обработчики кнопок переключения
-	b.Handle(&bot.btnNext, func(c tb.Context) error {
+	// обработчики кнопок
+	b.Handle(&bot.btnFirst, func(c tb.Context) error {
 		chatID := c.Sender().ID
-		bot.latestPage[chatID]++
+		bot.latestPage[chatID] = 1
 		bot.ShowLatestNews(chatID, c)
 		return nil
 	})
@@ -54,6 +60,24 @@ func New(token string, db *sql.DB) *Bot {
 		if bot.latestPage[chatID] > 1 {
 			bot.latestPage[chatID]--
 		}
+		bot.ShowLatestNews(chatID, c)
+		return nil
+	})
+	b.Handle(&bot.btnNext, func(c tb.Context) error {
+		chatID := c.Sender().ID
+		bot.latestPage[chatID]++
+		bot.ShowLatestNews(chatID, c)
+		return nil
+	})
+	b.Handle(&bot.btnLast, func(c tb.Context) error {
+		chatID := c.Sender().ID
+		totalCount, _ := storage.GetTodayNewsCountForUser(bot.db, chatID)
+		pageSize := 4
+		totalPages := (totalCount + pageSize - 1) / pageSize
+		if totalPages < 1 {
+			totalPages = 1
+		}
+		bot.latestPage[chatID] = totalPages
 		bot.ShowLatestNews(chatID, c)
 		return nil
 	})
@@ -200,12 +224,14 @@ func (b *Bot) ShowLatestNews(chatID int64, c tb.Context) {
 	// кнопки
 	markup := &tb.ReplyMarkup{}
 	var row []tb.InlineButton
+
 	if page > 1 {
-		row = append(row, b.btnPrev)
+		row = append(row, b.btnFirst, b.btnPrev)
 	}
 	if page < totalPages {
-		row = append(row, b.btnNext)
+		row = append(row, b.btnNext, b.btnLast)
 	}
+
 	if len(row) > 0 {
 		markup.InlineKeyboard = [][]tb.InlineButton{row}
 	}
@@ -217,7 +243,6 @@ func (b *Bot) ShowLatestNews(chatID int64, c tb.Context) {
 		_, _ = b.bot.Send(tb.ChatID(chatID), text, markup)
 	}
 }
-
 // StartNewsUpdater запускает циклическое обновление новостей
 func (b *Bot) StartNewsUpdater(interval time.Duration) {
 	ticker := time.NewTicker(interval)
