@@ -15,9 +15,8 @@ type Bot struct {
 	bot        *tb.Bot
 	db         *sql.DB
 	pending    map[int64]string
-	latestPage map[int64]int // страница /latest для каждого пользователя
+	latestPage map[int64]int
 
-	// кнопки для навигации
 	btnFirst tb.InlineButton
 	btnPrev  tb.InlineButton
 	btnNext  tb.InlineButton
@@ -36,7 +35,7 @@ func New(token string, db *sql.DB) *Bot {
 		log.Fatalf("Ошибка создания бота: %v", err)
 	}
 
-	bot := &Bot{
+	botInstance := &Bot{
 		bot:        b,
 		db:         db,
 		pending:    make(map[int64]string),
@@ -48,13 +47,37 @@ func New(token string, db *sql.DB) *Bot {
 		btnLast:  tb.InlineButton{Unique: "latest_last", Text: "⏭"},
 	}
 
-	// Обработчики навигации новостей
-	b.Handle(&bot.btnFirst, bot.handleFirst)
-	b.Handle(&bot.btnPrev, bot.handlePrev)
-	b.Handle(&bot.btnNext, bot.handleNext)
-	b.Handle(&bot.btnLast, bot.handleLast)
+	// Навигация по /latest
+	b.Handle(&botInstance.btnFirst, func(c tb.Context) error {
+		chatID := c.Sender().ID
+		botInstance.latestPage[chatID] = 1
+		return botInstance.ShowLatestNews(chatID, c)
+	})
+	b.Handle(&botInstance.btnPrev, func(c tb.Context) error {
+		chatID := c.Sender().ID
+		if botInstance.latestPage[chatID] > 1 {
+			botInstance.latestPage[chatID]--
+		}
+		return botInstance.ShowLatestNews(chatID, c)
+	})
+	b.Handle(&botInstance.btnNext, func(c tb.Context) error {
+		chatID := c.Sender().ID
+		botInstance.latestPage[chatID]++
+		return botInstance.ShowLatestNews(chatID, c)
+	})
+	b.Handle(&botInstance.btnLast, func(c tb.Context) error {
+		chatID := c.Sender().ID
+		totalCount, _ := storage.GetTodayNewsCountForUser(botInstance.db, chatID)
+		pageSize := 4
+		totalPages := (totalCount + pageSize - 1) / pageSize
+		if totalPages < 1 {
+			totalPages = 1
+		}
+		botInstance.latestPage[chatID] = totalPages
+		return botInstance.ShowLatestNews(chatID, c)
+	})
 
-	return bot
+	return botInstance
 }
 
 // Start запускает бота
@@ -64,8 +87,10 @@ func (b *Bot) Start() {
 		return nil
 	})
 
+	// Обработчики кнопок
 	b.bot.Handle(tb.OnCallback, func(c tb.Context) error {
 		data := c.Callback().Data
+		userID := c.Sender().ID
 		if strings.HasPrefix(data, "toggle:") {
 			return b.ToggleSource(c)
 		}
@@ -85,99 +110,4 @@ func (b *Bot) SendMessage(chatID int64, text string) {
 	if err != nil {
 		log.Printf("Ошибка отправки сообщения: %v", err)
 	}
-}
-
-// Навигация по новостям
-func (b *Bot) handleFirst(c tb.Context) error {
-	chatID := c.Sender().ID
-	b.latestPage[chatID] = 1
-	b.ShowLatestNews(chatID, c)
-	return nil
-}
-func (b *Bot) handlePrev(c tb.Context) error {
-	chatID := c.Sender().ID
-	if b.latestPage[chatID] > 1 {
-		b.latestPage[chatID]--
-	}
-	b.ShowLatestNews(chatID, c)
-	return nil
-}
-func (b *Bot) handleNext(c tb.Context) error {
-	chatID := c.Sender().ID
-	b.latestPage[chatID]++
-	b.ShowLatestNews(chatID, c)
-	return nil
-}
-func (b *Bot) handleLast(c tb.Context) error {
-	chatID := c.Sender().ID
-	totalCount, _ := storage.GetTodayNewsCountForUser(b.db, chatID)
-	pageSize := 4
-	totalPages := (totalCount + pageSize - 1) / pageSize
-	if totalPages < 1 {
-		totalPages = 1
-	}
-	b.latestPage[chatID] = totalPages
-	b.ShowLatestNews(chatID, c)
-	return nil
-}
-
-// ToggleSource подписка/отписка при нажатии кнопки
-func (b *Bot) ToggleSource(c tb.Context) error {
-	data := c.Callback().Data
-	userID := c.Sender().ID
-
-	src := strings.TrimPrefix(data, "toggle:")
-	subs, _ := storage.GetUserSources(b.db, userID)
-	isSub := false
-	for _, s := range subs {
-		if s == src {
-			isSub = true
-			break
-		}
-	}
-
-	if isSub {
-		_ = storage.Unsubscribe(b.db, userID, src)
-		_ = c.Respond(&tb.CallbackResponse{Text: "❌ Отписка"})
-	} else {
-		_ = storage.Subscribe(b.db, userID, src)
-		_ = c.Respond(&tb.CallbackResponse{Text: "✅ Подписка"})
-	}
-
-	// Обновляем кнопки без нового сообщения
-	b.ShowSourcesMenu(userID, c)
-	return nil
-}
-
-// HandleAutopost обработка кнопок выбора времени
-func (b *Bot) HandleAutopost(c tb.Context) error {
-	data := c.Callback().Data
-	userID := c.Sender().ID
-
-	if data == "autopost:disable" {
-		_ = storage.SetUserAutopost(b.db, userID, []string{})
-		_ = c.Respond(&tb.CallbackResponse{Text: "❌ Автопост отключен"})
-		b.ShowAutopostMenu(userID, c)
-		return nil
-	}
-
-	if strings.HasPrefix(data, "autopost:set:") {
-		t := strings.TrimPrefix(data, "autopost:set:")
-		current, _ := storage.GetUserAutopost(b.db, userID)
-		if len(current) >= 6 {
-			_ = c.Respond(&tb.CallbackResponse{Text: "⚠️ Можно максимум 6"})
-			return nil
-		}
-		for _, tt := range current {
-			if tt == t {
-				_ = c.Respond(&tb.CallbackResponse{Text: "⏳ Уже выбрано"})
-				return nil
-			}
-		}
-		current = append(current, t)
-		_ = storage.SetUserAutopost(b.db, userID, current)
-		_ = c.Respond(&tb.CallbackResponse{Text: "✅ Добавлено " + t})
-		b.ShowAutopostMenu(userID, c)
-	}
-	return nil
 }
