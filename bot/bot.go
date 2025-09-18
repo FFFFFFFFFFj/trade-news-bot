@@ -22,6 +22,10 @@ type Bot struct {
 	btnPrev  tb.InlineButton
 	btnNext  tb.InlineButton
 	btnLast  tb.InlineButton
+
+	btnAddSource    tb.InlineButton
+	btnRemoveSource tb.InlineButton
+	btnBroadcast    tb.InlineButton
 }
 
 var AdminIDs = map[int64]bool{
@@ -50,6 +54,10 @@ func New(token string, db *sql.DB) *Bot {
 		btnPrev:  tb.InlineButton{Unique: "latest_prev", Text: "⬅️"},
 		btnNext:  tb.InlineButton{Unique: "latest_next", Text: "➡️"},
 		btnLast:  tb.InlineButton{Unique: "latest_last", Text: "⏭"},
+
+		btnAddSource:    tb.InlineButton{Unique: "admin_add_source", Text: "➕ Добавить источник"},
+		btnRemoveSource: tb.InlineButton{Unique: "admin_remove_source", Text: "➖ Удалить источник"},
+		btnBroadcast:    tb.InlineButton{Unique: "admin_broadcast", Text: "📢 Рассылка всем"},
 		
 	}
 	b.Handle(&b.btnAddSource, b.HandleAdminSource)
