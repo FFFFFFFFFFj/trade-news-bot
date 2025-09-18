@@ -129,7 +129,82 @@ func (b *Bot) SendMessage(chatID int64, text string) {
 		log.Printf("Ошибка отправки сообщения: %v", err)
 	}
 }
+// ---------------------- Админские методы ----------------------
 
+// HandleAdminSource — обработка кнопок добавления/удаления источника
+func (b *Bot) HandleAdminSource(c tb.Context) error {
+	userID := c.Sender().ID
+	if !b.IsAdmin(userID) {
+		return c.Respond(&tb.CallbackResponse{Text: "⚠️ Нет доступа"})
+	}
+
+	data := c.Callback().Data
+
+	if strings.HasPrefix(data, "admin:addsource:") {
+		url := strings.TrimPrefix(data, "admin:addsource:")
+		if url == "" {
+			return c.Respond(&tb.CallbackResponse{Text: "⚠️ URL пустой"})
+		}
+		if err := storage.AddSource(b.db, url); err != nil {
+			return c.Respond(&tb.CallbackResponse{Text: "❌ Ошибка добавления"})
+		}
+		return c.Respond(&tb.CallbackResponse{Text: "✅ Источник добавлен: " + url})
+	}
+
+	if strings.HasPrefix(data, "admin:removesource:") {
+		url := strings.TrimPrefix(data, "admin:removesource:")
+		if url == "" {
+			return c.Respond(&tb.CallbackResponse{Text: "⚠️ URL пустой"})
+		}
+		if err := storage.RemoveSource(b.db, url); err != nil {
+			return c.Respond(&tb.CallbackResponse{Text: "❌ Ошибка удаления"})
+		}
+		return c.Respond(&tb.CallbackResponse{Text: "✅ Источник удалён: " + url})
+	}
+
+	return nil
+}
+
+// HandleAdminBroadcast — рассылка сообщения всем пользователям
+func (b *Bot) HandleAdminBroadcast(c tb.Context) error {
+	userID := c.Sender().ID
+	if !b.IsAdmin(userID) {
+		return c.Respond(&tb.CallbackResponse{Text: "⚠️ Нет доступа"})
+	}
+
+	// сообщение для рассылки хранится в pending
+	msg, ok := b.pending[userID]
+	if !ok || msg == "" {
+		return c.Respond(&tb.CallbackResponse{Text: "⚠️ Нет сообщения для рассылки"})
+	}
+
+	// получаем всех пользователей
+	rows, err := b.db.Query(`SELECT id FROM users`)
+	if err != nil {
+		return c.Respond(&tb.CallbackResponse{Text: "❌ Ошибка получения пользователей"})
+	}
+	defer rows.Close()
+
+	count := 0
+	for rows.Next() {
+		var uid int64
+		if err := rows.Scan(&uid); err == nil {
+			b.SendMessage(uid, msg)
+			count++
+		}
+	}
+
+	// очищаем pending
+	b.pending[userID] = ""
+
+	return c.Respond(&tb.CallbackResponse{Text: fmt.Sprintf("✅ Сообщение разослано %d пользователям", count)})
+}
+
+// ---------------------- Вызов админских функций ----------------------
+// Добавляем обработку callback кнопок для админа в New():
+b.Handle(&b.btnAddSource, b.HandleAdminSource)
+b.Handle(&b.btnRemoveSource, b.HandleAdminSource)
+b.Handle(&b.btnBroadcast, b.HandleAdminBroadcast)
 // ShowSourcesMenu отображает меню подписок с кнопками
 func (b *Bot) ShowSourcesMenu(chatID int64) {
 	_, _ = b.db.Exec(`INSERT INTO users (id) VALUES ($1) ON CONFLICT DO NOTHING`, chatID)
