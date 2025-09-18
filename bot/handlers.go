@@ -14,7 +14,7 @@ func (b *Bot) HandleMessage(m *tb.Message) {
 	txt := strings.TrimSpace(m.Text)
 	userID := m.Chat.ID
 
-	// Проверяем, ожидает ли админ ввод URL
+	// Проверяем, ожидает ли админ ввод URL или текста для рассылки
 	if mode, ok := b.pending[userID]; ok && b.IsAdmin(userID) {
 		switch mode {
 		case "addsource":
@@ -29,6 +29,7 @@ func (b *Bot) HandleMessage(m *tb.Message) {
 			}
 			b.pending[userID] = "" // сброс режима
 			return
+
 		case "removesource":
 			if txt == "" {
 				b.SendMessage(userID, "⚠️ URL пустой")
@@ -41,25 +42,30 @@ func (b *Bot) HandleMessage(m *tb.Message) {
 			}
 			b.pending[userID] = "" // сброс режима
 			return
+
 		case "broadcast":
 			if txt == "" {
 				b.SendMessage(userID, "⚠️ Сообщение пустое")
 				return
 			}
-			b.pending[userID] = txt
-			b.HandleAdminBroadcast(&tb.Callback{Sender: m.Chat}) // отправка всем
+			b.BroadcastMessage(txt)
+			b.SendMessage(userID, "✅ Сообщение разослано всем пользователям")
+			b.pending[userID] = "" // сброс режима
 			return
 		}
 	}
 
+	// Обработка обычных команд
 	switch {
 	case txt == "/start":
 		if b.IsAdmin(userID) {
 			usersCount, _ := storage.GetUsersCount(b.db)
 			activeUsers, _ := storage.GetActiveUsersCount(b.db)
 			autopostUsers, _ := storage.GetAutopostUsersCount(b.db)
-			msg := fmt.Sprintf("👑 Админ\nID: %d\nВсего пользователей: %d\nПодписанных: %d\nС автопостом: %d\nВсего источников: %d",
-				userID, usersCount, activeUsers, autopostUsers, len(storage.MustGetAllSources(b.db)))
+			msg := fmt.Sprintf(
+				"👑 Админ\nID: %d\nВсего пользователей: %d\nПодписанных: %d\nС автопостом: %d\nВсего источников: %d",
+				userID, usersCount, activeUsers, autopostUsers, len(storage.MustGetAllSources(b.db)),
+			)
 			b.SendMessage(userID, msg)
 		} else {
 			subsCount, _ := storage.GetUserSubscriptionCount(b.db, userID)
@@ -105,4 +111,24 @@ func (b *Bot) HandleMessage(m *tb.Message) {
 	default:
 		log.Printf("Сообщение: %s", txt)
 	}
+}
+
+// BroadcastMessage разсылает текст всем пользователям
+func (b *Bot) BroadcastMessage(msg string) {
+	rows, err := b.db.Query(`SELECT id FROM users`)
+	if err != nil {
+		log.Printf("Ошибка получения пользователей: %v", err)
+		return
+	}
+	defer rows.Close()
+
+	count := 0
+	for rows.Next() {
+		var uid int64
+		if err := rows.Scan(&uid); err == nil {
+			b.SendMessage(uid, msg)
+			count++
+		}
+	}
+	log.Printf("Сообщение разослано %d пользователям", count)
 }
