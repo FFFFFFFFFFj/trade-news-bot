@@ -307,3 +307,43 @@ func GetLatestNewsPageForUser(db *sql.DB, userID int64, page, pageSize int) ([]N
 	}
 	return items, nil
 }
+
+// Подсчёт новостей за сегодня для пользователя
+func GetTodayNewsCountForUser(db *sql.DB, userID int64) (int, error) {
+	var count int
+	err := db.QueryRow(`
+		SELECT COUNT(*)
+		FROM news
+		WHERE source_url IN (SELECT source_url FROM subscriptions WHERE user_id = $1)
+		AND pub_date::date = CURRENT_DATE
+	`, userID).Scan(&count)
+	return count, err
+}
+
+// Получение новостей за сегодня с пагинацией
+func GetTodayNewsPageForUser(db *sql.DB, userID int64, page, pageSize int) ([]NewsItem, error) {
+	offset := (page - 1) * pageSize
+
+	rows, err := db.Query(`
+		SELECT title, link, pub_date, source_url
+		FROM news
+		WHERE source_url IN (SELECT source_url FROM subscriptions WHERE user_id = $1)
+		AND pub_date::date = CURRENT_DATE
+		ORDER BY pub_date DESC
+		OFFSET $2 LIMIT $3
+	`, userID, offset, pageSize)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var items []NewsItem
+	for rows.Next() {
+		var n NewsItem
+		if err := rows.Scan(&n.Title, &n.Link, &n.PubDate, &n.Source); err != nil {
+			return nil, err
+		}
+		items = append(items, n)
+	}
+	return items, nil
+}
