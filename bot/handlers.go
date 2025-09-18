@@ -10,11 +10,11 @@ import (
 )
 
 func (b *Bot) HandleMessage(m *tb.Message) {
-	_, _ = b.db.Exec(`INSERT INTO users (id) VALUES ($1) ON CONFLICT DO NOTHING`, m.Chat.ID)
-	txt := strings.TrimSpace(m.Text)
 	userID := m.Chat.ID
+	_, _ = b.db.Exec(`INSERT INTO users (id) VALUES ($1) ON CONFLICT DO NOTHING`, userID)
+	txt := strings.TrimSpace(m.Text)
 
-	// Проверяем, ожидает ли админ ввод URL или текста для рассылки
+	// Проверяем, ожидает ли админ ввод URL или сообщение для рассылки
 	if mode, ok := b.pending[userID]; ok && b.IsAdmin(userID) {
 		switch mode {
 		case "addsource":
@@ -27,9 +27,8 @@ func (b *Bot) HandleMessage(m *tb.Message) {
 			} else {
 				b.SendMessage(userID, "✅ Источник добавлен: "+txt)
 			}
-			b.pending[userID] = "" // сброс режима
+			b.pending[userID] = ""
 			return
-
 		case "removesource":
 			if txt == "" {
 				b.SendMessage(userID, "⚠️ URL пустой")
@@ -40,32 +39,28 @@ func (b *Bot) HandleMessage(m *tb.Message) {
 			} else {
 				b.SendMessage(userID, "✅ Источник удалён: "+txt)
 			}
-			b.pending[userID] = "" // сброс режима
+			b.pending[userID] = ""
 			return
-
 		case "broadcast":
 			if txt == "" {
 				b.SendMessage(userID, "⚠️ Сообщение пустое")
 				return
 			}
-			b.BroadcastMessage(txt)
-			b.SendMessage(userID, "✅ Сообщение разослано всем пользователям")
-			b.pending[userID] = "" // сброс режима
+			b.pending[userID] = txt
+			b.HandleAdminBroadcast(&tb.Callback{Sender: m.Sender}) // вызов рассылки
 			return
 		}
 	}
 
-	// Обработка обычных команд
 	switch {
 	case txt == "/start":
 		if b.IsAdmin(userID) {
+			b.ShowAdminMenu(userID) // Показываем админские кнопки
 			usersCount, _ := storage.GetUsersCount(b.db)
 			activeUsers, _ := storage.GetActiveUsersCount(b.db)
 			autopostUsers, _ := storage.GetAutopostUsersCount(b.db)
-			msg := fmt.Sprintf(
-				"👑 Админ\nID: %d\nВсего пользователей: %d\nПодписанных: %d\nС автопостом: %d\nВсего источников: %d",
-				userID, usersCount, activeUsers, autopostUsers, len(storage.MustGetAllSources(b.db)),
-			)
+			msg := fmt.Sprintf("👑 Админ\nID: %d\nВсего пользователей: %d\nПодписанных: %d\nС автопостом: %d\nВсего источников: %d",
+				userID, usersCount, activeUsers, autopostUsers, len(storage.MustGetAllSources(b.db)))
 			b.SendMessage(userID, msg)
 		} else {
 			subsCount, _ := storage.GetUserSubscriptionCount(b.db, userID)
@@ -113,22 +108,45 @@ func (b *Bot) HandleMessage(m *tb.Message) {
 	}
 }
 
-// BroadcastMessage разсылает текст всем пользователям
-func (b *Bot) BroadcastMessage(msg string) {
-	rows, err := b.db.Query(`SELECT id FROM users`)
-	if err != nil {
-		log.Printf("Ошибка получения пользователей: %v", err)
+// ---------------------- Админское меню с кнопками ----------------------
+
+func (b *Bot) ShowAdminMenu(chatID int64) {
+	if !b.IsAdmin(chatID) {
 		return
 	}
-	defer rows.Close()
 
-	count := 0
-	for rows.Next() {
-		var uid int64
-		if err := rows.Scan(&uid); err == nil {
-			b.SendMessage(uid, msg)
-			count++
-		}
+	markup := &tb.ReplyMarkup{}
+	btnAdd := tb.InlineButton{
+		Unique: "admin_addsource",
+		Text:   "➕ Добавить источник",
 	}
-	log.Printf("Сообщение разослано %d пользователям", count)
+	btnRemove := tb.InlineButton{
+		Unique: "admin_removesource",
+		Text:   "➖ Удалить источник",
+	}
+	btnBroadcast := tb.InlineButton{
+		Unique: "admin_broadcast",
+		Text:   "📢 Рассылка всем",
+	}
+
+	markup.InlineKeyboard = [][]tb.InlineButton{
+		{btnAdd, btnRemove},
+		{btnBroadcast},
+	}
+
+	_, _ = b.bot.Send(tb.ChatID(chatID), "👑 Админ-меню:", markup)
+
+	// Привязка кнопок к режимам pending
+	b.bot.Handle(&btnAdd, func(c tb.Context) error {
+		b.pending[chatID] = "addsource"
+		return c.Respond(&tb.CallbackResponse{Text: "Введите URL для добавления источника"})
+	})
+	b.bot.Handle(&btnRemove, func(c tb.Context) error {
+		b.pending[chatID] = "removesource"
+		return c.Respond(&tb.CallbackResponse{Text: "Введите URL для удаления источника"})
+	})
+	b.bot.Handle(&btnBroadcast, func(c tb.Context) error {
+		b.pending[chatID] = "broadcast"
+		return c.Respond(&tb.CallbackResponse{Text: "Введите сообщение для рассылки"})
+	})
 }
