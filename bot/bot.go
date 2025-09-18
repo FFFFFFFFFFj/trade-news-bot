@@ -15,13 +15,17 @@ type Bot struct {
 	bot        *tb.Bot
 	db         *sql.DB
 	pending    map[int64]string
-	latestPage map[int64]int // страница /latest для каждого пользователя
+	latestPage map[int64]int
 
-	// кнопки для навигации
+	// Навигационные кнопки для новостей
 	btnFirst tb.InlineButton
 	btnPrev  tb.InlineButton
 	btnNext  tb.InlineButton
 	btnLast  tb.InlineButton
+}
+
+var AdminIDs = map[int64]bool{
+	839986298: true,
 }
 
 // New создаёт нового бота
@@ -48,23 +52,26 @@ func New(token string, db *sql.DB) *Bot {
 		btnLast:  tb.InlineButton{Unique: "latest_last", Text: "⏭"},
 	}
 
-	// Обработчики кнопок навигации
+	// Кнопки навигации для /latest
 	b.Handle(&botInstance.btnFirst, func(c tb.Context) error {
 		chatID := c.Sender().ID
 		botInstance.latestPage[chatID] = 1
-		return botInstance.ShowLatestNews(chatID, c)
+		botInstance.ShowLatestNews(chatID, c)
+		return nil
 	})
 	b.Handle(&botInstance.btnPrev, func(c tb.Context) error {
 		chatID := c.Sender().ID
 		if botInstance.latestPage[chatID] > 1 {
 			botInstance.latestPage[chatID]--
 		}
-		return botInstance.ShowLatestNews(chatID, c)
+		botInstance.ShowLatestNews(chatID, c)
+		return nil
 	})
 	b.Handle(&botInstance.btnNext, func(c tb.Context) error {
 		chatID := c.Sender().ID
 		botInstance.latestPage[chatID]++
-		return botInstance.ShowLatestNews(chatID, c)
+		botInstance.ShowLatestNews(chatID, c)
+		return nil
 	})
 	b.Handle(&botInstance.btnLast, func(c tb.Context) error {
 		chatID := c.Sender().ID
@@ -75,7 +82,8 @@ func New(token string, db *sql.DB) *Bot {
 			totalPages = 1
 		}
 		botInstance.latestPage[chatID] = totalPages
-		return botInstance.ShowLatestNews(chatID, c)
+		botInstance.ShowLatestNews(chatID, c)
+		return nil
 	})
 
 	return botInstance
@@ -96,11 +104,22 @@ func (b *Bot) Start() {
 		if strings.HasPrefix(data, "autopost:") {
 			return b.HandleAutopost(c)
 		}
+		if strings.HasPrefix(data, "admin_add:") || strings.HasPrefix(data, "admin_remove:") {
+			return b.HandleAdminSource(c)
+		}
+		if strings.HasPrefix(data, "admin_broadcast:") {
+			return b.HandleAdminBroadcast(c)
+		}
 		return nil
 	})
 
 	log.Println("🤖 Бот запущен...")
 	b.bot.Start()
+}
+
+// IsAdmin проверка
+func (b *Bot) IsAdmin(userID int64) bool {
+	return AdminIDs[userID]
 }
 
 // SendMessage отправляет текстовое сообщение
