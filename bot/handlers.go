@@ -40,7 +40,7 @@ func (b *Bot) HandleMessage(m *tb.Message) {
 			"/latest – новости за сегодня с пагинацией\n" +
 			"/mysources – управление подписками\n" +
 			"/autopost – настройка авторассылки (0–6 раз в день, время по Москве)\n" +
-			"Можно также указать вручную: /autopost 10:30 15:45\n")
+			"Можно также указать вручную: \n/autopost 10:30 15:45\n")
 
 	} else if strings.HasPrefix(txt, "/autopost ") {
 		parts := strings.Fields(txt)[1:]
