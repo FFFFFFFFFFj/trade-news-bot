@@ -9,14 +9,13 @@ import (
 	tb "gopkg.in/telebot.v3"
 )
 
-// HandleMessage обрабатывает все входящие текстовые сообщения
 func (b *Bot) HandleMessage(m *tb.Message) {
 	userID := m.Chat.ID
 	_, _ = b.db.Exec(`INSERT INTO users (id) VALUES ($1) ON CONFLICT DO NOTHING`, userID)
 
 	txt := strings.TrimSpace(m.Text)
 
-	// Проверяем, ожидает ли админ ввод URL или сообщения для рассылки
+	// Проверяем, ожидает ли админ ввод URL или рассылки
 	if mode, ok := b.pending[userID]; ok && b.IsAdmin(userID) {
 		switch mode {
 		case "addsource":
@@ -29,7 +28,7 @@ func (b *Bot) HandleMessage(m *tb.Message) {
 			} else {
 				b.SendMessage(userID, "✅ Источник добавлен: "+txt)
 			}
-			b.pending[userID] = "" // сброс режима
+			b.pending[userID] = ""
 			return
 
 		case "removesource":
@@ -42,7 +41,7 @@ func (b *Bot) HandleMessage(m *tb.Message) {
 			} else {
 				b.SendMessage(userID, "✅ Источник удалён: "+txt)
 			}
-			b.pending[userID] = "" // сброс режима
+			b.pending[userID] = ""
 			return
 
 		case "broadcast":
@@ -52,7 +51,7 @@ func (b *Bot) HandleMessage(m *tb.Message) {
 			}
 			count := b.BroadcastMessageToAll(txt)
 			b.SendMessage(userID, fmt.Sprintf("✅ Сообщение разослано %d пользователям", count))
-			b.pending[userID] = "" // сброс режима
+			b.pending[userID] = ""
 			return
 		}
 	}
@@ -73,16 +72,20 @@ func (b *Bot) HandleMessage(m *tb.Message) {
 		}
 
 	case txt == "/help":
-		b.SendMessage(userID, "Доступные команды:\n"+
-			"/start – информация о вас\n"+
-			"/help – список команд\n"+
-			"/latest – новости за сегодня\n"+
-			"/mysources – управление подписками\n"+
-			"/autopost – настройка авторассылки\n"+
-			"Админ:\n"+
-			"/addsource – добавить источник\n"+
-			"/removesource – удалить источник\n"+
-			"/broadcast – рассылка всем\n")
+		helpMsg := "Доступные команды:\n" +
+			"/start – информация о вас\n" +
+			"/help – список команд\n" +
+			"/latest – новости за сегодня\n" +
+			"/mysources – управление подписками\n" +
+			"/autopost – настройка авторассылки\n"
+		if b.IsAdmin(userID) {
+			helpMsg += "\nАдмин-команды:\n" +
+				"/addsource – добавить источник\n" +
+				"/removesource – удалить источник\n" +
+				"/listsources – список источников\n" +
+				"/broadcast – рассылка всем\n"
+		}
+		b.SendMessage(userID, helpMsg)
 
 	case txt == "/autopost":
 		b.ShowAutopostMenu(userID)
@@ -113,7 +116,6 @@ func (b *Bot) HandleMessage(m *tb.Message) {
 
 	case txt == "/addsource":
 		if !b.IsAdmin(userID) {
-			b.SendMessage(userID, "⚠️ Нет доступа")
 			return
 		}
 		b.pending[userID] = "addsource"
@@ -121,7 +123,6 @@ func (b *Bot) HandleMessage(m *tb.Message) {
 
 	case txt == "/removesource":
 		if !b.IsAdmin(userID) {
-			b.SendMessage(userID, "⚠️ Нет доступа")
 			return
 		}
 		b.pending[userID] = "removesource"
@@ -129,11 +130,22 @@ func (b *Bot) HandleMessage(m *tb.Message) {
 
 	case txt == "/broadcast":
 		if !b.IsAdmin(userID) {
-			b.SendMessage(userID, "⚠️ Нет доступа")
 			return
 		}
 		b.pending[userID] = "broadcast"
 		b.SendMessage(userID, "Введите текст для рассылки всем пользователям:")
+
+	case txt == "/listsources":
+		if !b.IsAdmin(userID) {
+			return
+		}
+		sources := storage.MustGetAllSources(b.db)
+		if len(sources) == 0 {
+			b.SendMessage(userID, "Источники не найдены")
+		} else {
+			msg := "Список источников:\n" + strings.Join(sources, "\n")
+			b.SendMessage(userID, msg)
+		}
 
 	default:
 		log.Printf("Сообщение: %s", txt)
