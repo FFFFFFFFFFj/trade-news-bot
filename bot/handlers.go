@@ -18,15 +18,20 @@ func (b *Bot) IsAdmin(userID int64) bool {
 }
 
 func (b *Bot) HandleMessage(m *tb.Message) {
+	// Гарантируем, что пользователь есть в таблице users (чтобы считать "сколько запустило бота")
+	_, _ = b.db.Exec(`INSERT INTO users (id) VALUES ($1) ON CONFLICT DO NOTHING`, m.Chat.ID)
+
 	txt := strings.TrimSpace(m.Text)
 
-	// используем if-else вместо switch, чтобы корректно работать с HasPrefix
+	// используем if-else чтобы корректно работать с HasPrefix для /autopost 09:00 ...
 	if txt == "/start" {
 		subsCount, _ := storage.GetUserSubscriptionCount(b.db, m.Chat.ID)
 		if b.IsAdmin(m.Chat.ID) {
+			usersCount, _ := storage.GetUsersCount(b.db)
 			activeUsers, _ := storage.GetActiveUsersCount(b.db)
-			msg := fmt.Sprintf("👑 Админ\nID: %d\nАктивных пользователей: %d\nВсего источников: %d",
-				m.Chat.ID, activeUsers, len(storage.MustGetAllSources(b.db)))
+			autopostUsers, _ := storage.GetAutopostUsersCount(b.db)
+			msg := fmt.Sprintf("👑 Админ\nID: %d\n\nВсего пользователей (запустили бота): %d\nПодписанных (хотя бы на 1): %d\nС автопостом: %d\n\nВсего источников: %d",
+				m.Chat.ID, usersCount, activeUsers, autopostUsers, len(storage.MustGetAllSources(b.db)))
 			b.SendMessage(m.Chat.ID, msg)
 		} else {
 			msg := fmt.Sprintf("👤 Пользователь\nID: %d\nПодписок: %d", m.Chat.ID, subsCount)
@@ -40,7 +45,7 @@ func (b *Bot) HandleMessage(m *tb.Message) {
 			"/latest – новости за сегодня с пагинацией\n" +
 			"/mysources – управление подписками\n" +
 			"/autopost – настройка авторассылки (0–6 раз в день, время по Москве)\n" +
-			"Можно также указать вручную: \n/autopost 10:30 15:45\n")
+			"Можно также указать вручную: /autopost 10:30 15:45\n")
 
 	} else if strings.HasPrefix(txt, "/autopost ") {
 		parts := strings.Fields(txt)[1:]
