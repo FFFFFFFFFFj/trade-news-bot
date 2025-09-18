@@ -34,7 +34,15 @@ func (b *Bot) HandleMessage(m *tb.Message) {
 		}
 
 	case "/help":
-		b.SendMessage(m.Chat.ID, "Доступные команды:\n/start\n/help\n/latest\n/mysources")
+	b.SendMessage(m.Chat.ID, "Доступные команды:\n" +
+		"/start – информация о вас\n" +
+		"/help – список команд\n" +
+		"/latest – новости за сегодня с пагинацией\n" +
+		"/mysources – управление подписками\n" +
+		"/autopost – настройка авторассылки (0–6 раз в день, время по Москве)\n")
+
+	case "/autopost":
+		b.ShowAutopostMenu(m.Chat.ID)
 
 	case "/latest":
 		b.SendMessage(m.Chat.ID, "⏳ Загружаю сегодняшние новости...")
