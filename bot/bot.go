@@ -50,28 +50,31 @@ func New(token string, db *sql.DB) *Bot {
 		pending:    make(map[int64]string),
 		latestPage: make(map[int64]int),
 
+		// Навигация для /latest
 		btnFirst: tb.InlineButton{Unique: "latest_first", Text: "⏮"},
 		btnPrev:  tb.InlineButton{Unique: "latest_prev", Text: "⬅️"},
 		btnNext:  tb.InlineButton{Unique: "latest_next", Text: "➡️"},
 		btnLast:  tb.InlineButton{Unique: "latest_last", Text: "⏭"},
 
+		// Админ-кнопки
 		btnAddSource:    tb.InlineButton{Unique: "admin_add_source", Text: "➕ Добавить источник"},
 		btnRemoveSource: tb.InlineButton{Unique: "admin_remove_source", Text: "➖ Удалить источник"},
 		btnBroadcast:    tb.InlineButton{Unique: "admin_broadcast", Text: "📢 Рассылка всем"},
-		
 	}
-	b.Handle(&b.btnAddSource, b.HandleAdminSource)
-	b.Handle(&b.btnRemoveSource, b.HandleAdminSource)
-	b.Handle(&b.btnBroadcast, b.HandleAdminBroadcast)
 
-	// Кнопки навигации для /latest
-	b.Handle(&botInstance.btnFirst, func(c tb.Context) error {
+	// Привязка админ-кнопок к методам Bot
+	botInstance.bot.Handle(&botInstance.btnAddSource, botInstance.HandleAdminSource)
+	botInstance.bot.Handle(&botInstance.btnRemoveSource, botInstance.HandleAdminSource)
+	botInstance.bot.Handle(&botInstance.btnBroadcast, botInstance.HandleAdminBroadcast)
+
+	// Навигация /latest
+	botInstance.bot.Handle(&botInstance.btnFirst, func(c tb.Context) error {
 		chatID := c.Sender().ID
 		botInstance.latestPage[chatID] = 1
 		botInstance.ShowLatestNews(chatID, c)
 		return nil
 	})
-	b.Handle(&botInstance.btnPrev, func(c tb.Context) error {
+	botInstance.bot.Handle(&botInstance.btnPrev, func(c tb.Context) error {
 		chatID := c.Sender().ID
 		if botInstance.latestPage[chatID] > 1 {
 			botInstance.latestPage[chatID]--
@@ -79,13 +82,13 @@ func New(token string, db *sql.DB) *Bot {
 		botInstance.ShowLatestNews(chatID, c)
 		return nil
 	})
-	b.Handle(&botInstance.btnNext, func(c tb.Context) error {
+	botInstance.bot.Handle(&botInstance.btnNext, func(c tb.Context) error {
 		chatID := c.Sender().ID
 		botInstance.latestPage[chatID]++
 		botInstance.ShowLatestNews(chatID, c)
 		return nil
 	})
-	b.Handle(&botInstance.btnLast, func(c tb.Context) error {
+	botInstance.bot.Handle(&botInstance.btnLast, func(c tb.Context) error {
 		chatID := c.Sender().ID
 		totalCount, _ := storage.GetTodayNewsCountForUser(botInstance.db, chatID)
 		pageSize := 4
@@ -100,7 +103,6 @@ func New(token string, db *sql.DB) *Bot {
 
 	return botInstance
 }
-
 // Start запускает бота
 func (b *Bot) Start() {
 	b.bot.Handle(tb.OnText, func(c tb.Context) error {
