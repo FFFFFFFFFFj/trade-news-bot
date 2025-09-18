@@ -37,6 +37,7 @@ func (b *Bot) HandleMessage(m *tb.Message) {
 		b.SendMessage(m.Chat.ID, "Доступные команды:\n/start\n/help\n/latest\n/mysources")
 
 	case "/latest":
+		b.SendMessage(m.Chat.ID, "⏳ Загружаю сегодняшние новости...")
 		b.latestPage[m.Chat.ID] = 1
 		b.ShowLatestNews(m.Chat.ID, nil)
 
