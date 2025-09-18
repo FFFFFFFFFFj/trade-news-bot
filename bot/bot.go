@@ -4,139 +4,113 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"strings"
+	"time"
 
 	"github.com/FFFFFFFFFFj/trade-news-bot/storage"
 	tb "gopkg.in/telebot.v3"
 )
 
 type Bot struct {
-	tb         *tb.Bot
+	bot        *tb.Bot
 	db         *sql.DB
+	pending    map[int64]string
 	latestPage map[int64]int
-	pendingDel map[int64]string // ожидаемое удаление источника
-	waitingAdd map[int64]bool   // ожидаем ввод нового источника
+
+	// кнопки для навигации
+	btnFirst tb.InlineButton
+	btnPrev  tb.InlineButton
+	btnNext  tb.InlineButton
+	btnLast  tb.InlineButton
 }
 
-func NewBot(telegramToken string, db *sql.DB) (*Bot, error) {
-	b, err := tb.NewBot(tb.Settings{
-		Token: telegramToken,
-	})
+// New создаёт нового бота
+func New(token string, db *sql.DB) *Bot {
+	pref := tb.Settings{
+		Token:  token,
+		Poller: &tb.LongPoller{Timeout: 10 * time.Second},
+	}
+
+	b, err := tb.NewBot(pref)
 	if err != nil {
-		return nil, err
+		log.Fatalf("Ошибка создания бота: %v", err)
 	}
 
 	bot := &Bot{
-		tb:         b,
+		bot:        b,
 		db:         db,
+		pending:    make(map[int64]string),
 		latestPage: make(map[int64]int),
-		pendingDel: make(map[int64]string),
-		waitingAdd: make(map[int64]bool),
+
+		btnFirst: tb.InlineButton{Unique: "latest_first", Text: "⏮"},
+		btnPrev:  tb.InlineButton{Unique: "latest_prev", Text: "⬅️"},
+		btnNext:  tb.InlineButton{Unique: "latest_next", Text: "➡️"},
+		btnLast:  tb.InlineButton{Unique: "latest_last", Text: "⏭"},
 	}
 
-	b.Handle(tb.OnText, func(m *tb.Message) {
-		bot.HandleMessage(m)
+	// кнопки пагинации новостей
+	b.Handle(&bot.btnFirst, func(c tb.Context) error {
+		chatID := c.Sender().ID
+		bot.latestPage[chatID] = 1
+		return bot.ShowLatestNews(chatID, c)
+	})
+	b.Handle(&bot.btnPrev, func(c tb.Context) error {
+		chatID := c.Sender().ID
+		if bot.latestPage[chatID] > 1 {
+			bot.latestPage[chatID]--
+		}
+		return bot.ShowLatestNews(chatID, c)
+	})
+	b.Handle(&bot.btnNext, func(c tb.Context) error {
+		chatID := c.Sender().ID
+		bot.latestPage[chatID]++
+		return bot.ShowLatestNews(chatID, c)
+	})
+	b.Handle(&bot.btnLast, func(c tb.Context) error {
+		chatID := c.Sender().ID
+		totalCount, _ := storage.GetTodayNewsCountForUser(bot.db, chatID)
+		pageSize := 4
+		totalPages := (totalCount + pageSize - 1) / pageSize
+		if totalPages < 1 {
+			totalPages = 1
+		}
+		bot.latestPage[chatID] = totalPages
+		return bot.ShowLatestNews(chatID, c)
 	})
 
-	b.Handle(&tb.Callback{}, func(c *tb.Callback) {
-		bot.HandleCallback(c)
-	})
-
-	return bot, nil
+	return bot
 }
 
+// Start запускает бота
 func (b *Bot) Start() {
-	b.tb.Start()
+	// Текстовые команды
+	b.bot.Handle(tb.OnText, func(c tb.Context) error {
+		b.HandleMessage(c.Message())
+		return nil
+	})
+
+	// Кнопки подписок и автопост
+	b.bot.Handle(tb.OnCallback, func(c tb.Context) error {
+		data := c.Callback().Data
+		userID := c.Sender().ID
+
+		if strings.HasPrefix(data, "toggle:") {
+			return b.ToggleSource(c)
+		}
+		if strings.HasPrefix(data, "autopost:") {
+			return b.HandleAutopost(c)
+		}
+		return nil
+	})
+
+	log.Println("🤖 Бот запущен...")
+	b.bot.Start()
 }
 
-func (b *Bot) SendMessage(chatID int64, text string, opts ...interface{}) {
-	_, err := b.tb.Send(&tb.Chat{ID: chatID}, text, opts...)
+// SendMessage отправляет текстовое сообщение
+func (b *Bot) SendMessage(chatID int64, text string) {
+	_, err := b.bot.Send(tb.ChatID(chatID), text)
 	if err != nil {
 		log.Printf("Ошибка отправки сообщения: %v", err)
-	}
-}
-
-// ==== Админ-меню ====
-func (b *Bot) ShowAdminMenu(chatID int64) {
-	menu := &tb.ReplyMarkup{}
-	btnSources := menu.Data("📂 Управлять источниками", "admin_sources")
-	btnPost := menu.Data("📢 Сделать рассылку", "admin_post")
-
-	menu.Inline(
-		menu.Row(btnSources),
-		menu.Row(btnPost),
-	)
-
-	b.SendMessage(chatID, "⚙️ Админ-меню:", menu)
-}
-
-func (b *Bot) ShowSourcesAdmin(chatID int64) {
-	sources := storage.MustGetAllSources(b.db)
-
-	menu := &tb.ReplyMarkup{}
-	var rows []tb.Row
-	for _, src := range sources {
-		btnDel := menu.Data("❌ "+src.URL, "del_source", src.URL)
-		rows = append(rows, menu.Row(btnDel))
-	}
-	btnAdd := menu.Data("➕ Добавить источник", "add_source")
-	rows = append(rows, menu.Row(btnAdd))
-
-	menu.Inline(rows...)
-	b.SendMessage(chatID, "📂 Источники:", menu)
-}
-
-func (b *Bot) BroadcastMessage(content string) {
-	users, err := storage.GetAllUsers(b.db)
-	if err != nil {
-		log.Printf("Ошибка получения пользователей: %v", err)
-		return
-	}
-	for _, uid := range users {
-		b.SendMessage(uid, "📢 "+content)
-	}
-}
-
-// ==== Callbacks ====
-func (b *Bot) HandleCallback(c *tb.Callback) {
-	data := c.Data
-	chatID := c.Sender.ID
-
-	switch {
-	case data == "admin_sources":
-		b.ShowSourcesAdmin(chatID)
-
-	case data == "add_source":
-		b.waitingAdd[chatID] = true
-		b.SendMessage(chatID, "✍️ Введите URL нового источника:")
-
-	case data == "admin_post":
-		b.SendMessage(chatID, "Используйте команду:\n/post текст_сообщения")
-
-	case c.Unique == "del_source":
-		url := c.Data
-		b.pendingDel[chatID] = url
-
-		menu := &tb.ReplyMarkup{}
-		btnYes := menu.Data("✅ Да", "confirm_del_yes", url)
-		btnNo := menu.Data("❌ Нет", "confirm_del_no", url)
-		menu.Inline(menu.Row(btnYes, btnNo))
-
-		b.SendMessage(chatID, fmt.Sprintf("Удалить источник?\n%s", url), menu)
-
-	case c.Unique == "confirm_del_yes":
-		url := c.Data
-		err := storage.DeleteSource(b.db, url)
-		if err != nil {
-			b.SendMessage(chatID, "❌ Ошибка удаления: "+err.Error())
-		} else {
-			b.SendMessage(chatID, "🗑 Источник удалён: "+url)
-		}
-		delete(b.pendingDel, chatID)
-		b.ShowSourcesAdmin(chatID)
-
-	case c.Unique == "confirm_del_no":
-		delete(b.pendingDel, chatID)
-		b.SendMessage(chatID, "❎ Удаление отменено")
-		b.ShowSourcesAdmin(chatID)
 	}
 }
