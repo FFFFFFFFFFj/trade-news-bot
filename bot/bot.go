@@ -102,6 +102,17 @@ func (b *Bot) Start() {
 		return nil
 	})
 
+	b.bot.Handle(tb.OnCallback, func(c tb.Context) error {
+		data := c.Callback().Data
+		if strings.HasPrefix(data, "toggle:") {
+			return b.ToggleSource(c)
+		}
+		if strings.HasPrefix(data, "autopost:") {
+			return b.HandleAutopost(c)
+		}
+		return nil
+	})
+
 	log.Println("🤖 Бот запущен...")
 	b.bot.Start()
 }
@@ -243,23 +254,98 @@ func (b *Bot) ShowLatestNews(chatID int64, c tb.Context) {
 		_, _ = b.bot.Send(tb.ChatID(chatID), text, markup)
 	}
 }
-// StartNewsUpdater запускает циклическое обновление новостей
-func (b *Bot) StartNewsUpdater(interval time.Duration) {
-	ticker := time.NewTicker(interval)
+// ShowAutopostMenu — меню выбора авторассылки
+func (b *Bot) ShowAutopostMenu(chatID int64) {
+	times, _ := storage.GetUserAutopost(b.db, chatID)
+
+	msg := "🕒 Настройка авторассылки\n" +
+		"Выберите время получения новостей (по МСК).\n" +
+		"Максимум 6 раз в день.\n\n" +
+		"Сейчас выбрано: "
+	if len(times) == 0 {
+		msg += "❌ авторассылка отключена"
+	} else {
+		msg += strings.Join(times, ", ")
+	}
+
+	// Примеры кнопок – фиксированные интервалы
+	rows := [][]tb.InlineButton{
+		{
+			{Text: "Отключить", Data: "autopost:disable"},
+		},
+		{
+			{Text: "09:00", Data: "autopost:set:09:00"},
+			{Text: "12:00", Data: "autopost:set:12:00"},
+		},
+		{
+			{Text: "15:00", Data: "autopost:set:15:00"},
+			{Text: "18:00", Data: "autopost:set:18:00"},
+		},
+		{
+			{Text: "21:00", Data: "autopost:set:21:00"},
+		},
+	}
+
+	markup := &tb.ReplyMarkup{InlineKeyboard: rows}
+	b.bot.Send(tb.ChatID(chatID), msg, markup)
+}
+
+// Toggle автопост
+func (b *Bot) HandleAutopost(c tb.Context) error {
+	data := c.Callback().Data
+	userID := c.Sender().ID
+
+	if data == "autopost:disable" {
+		_ = storage.SetUserAutopost(b.db, userID, []string{})
+		_ = c.Respond(&tb.CallbackResponse{Text: "❌ Автопост отключен"})
+		b.ShowAutopostMenu(userID)
+		return nil
+	}
+
+	if strings.HasPrefix(data, "autopost:set:") {
+		t := strings.TrimPrefix(data, "autopost:set:")
+
+		current, _ := storage.GetUserAutopost(b.db, userID)
+		// проверяем, не больше 6
+		if len(current) >= 6 {
+			_ = c.Respond(&tb.CallbackResponse{Text: "⚠️ Можно максимум 6"})
+			return nil
+		}
+		// добавляем новое время
+		current = append(current, t)
+		_ = storage.SetUserAutopost(b.db, userID, current)
+		_ = c.Respond(&tb.CallbackResponse{Text: "✅ Добавлено " + t})
+		b.ShowAutopostMenu(userID)
+	}
+	return nil
+}
+
+// StartNewsUpdater запускает авторассылку по расписанию пользователей
+func (b *Bot) StartNewsUpdater() {
+	loc, _ := time.LoadLocation("Europe/Moscow")
+	ticker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		log.Println("🔄 Проверка новостей...")
-		newsMap, err := storage.FetchAndStoreNews(b.db)
-		if err != nil {
-			log.Printf("Ошибка обновления новостей: %v", err)
-			continue
-		}
+	for now := range ticker.C {
+		mskNow := now.In(loc)
+		hhmm := mskNow.Format("15:04")
 
-		for userID, items := range newsMap {
-			for _, item := range items {
-				msg := fmt.Sprintf("📰 %s\n🔗 %s\n", item.Title, item.Link)
-				_, _ = b.bot.Send(tb.ChatID(userID), msg)
+		users, _ := storage.GetAllAutopostUsers(b.db)
+
+		for userID, times := range users {
+			for _, t := range times {
+				if t == hhmm {
+					// достаем последние 8 новостей за сегодня
+					news, _ := storage.GetTodayNewsPageForUser(b.db, userID, 1, 8)
+					if len(news) == 0 {
+						continue
+					}
+					text := "📰 Автоподборка новостей за сегодня:\n\n"
+					for _, n := range news {
+						text += fmt.Sprintf("• %s\n🔗 %s\n\n", n.Title, n.Link)
+					}
+					b.SendMessage(userID, text)
+				}
 			}
 		}
 	}
