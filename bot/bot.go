@@ -256,68 +256,79 @@ func (b *Bot) ShowLatestNews(chatID int64, c tb.Context) {
 }
 // ShowAutopostMenu — меню выбора авторассылки
 func (b *Bot) ShowAutopostMenu(chatID int64) {
-	times, _ := storage.GetUserAutopost(b.db, chatID)
+    times, _ := storage.GetUserAutopost(b.db, chatID)
 
-	msg := "🕒 Настройка авторассылки\n" +
-		"Выберите время получения новостей (по МСК).\n" +
-		"Максимум 6 раз в день.\n\n" +
-		"Сейчас выбрано: "
-	if len(times) == 0 {
-		msg += "❌ авторассылка отключена"
-	} else {
-		msg += strings.Join(times, ", ")
-	}
+    msg := "🕒 Настройка авторассылки\n" +
+        "Выберите время получения новостей (по МСК).\n" +
+        "Максимум 6 раз в день.\n" +
+        "Можно также ввести вручную: /autopost 10:30 15:45\n\n" +
+        "Сейчас выбрано: "
+    if len(times) == 0 {
+        msg += "❌ авторассылка отключена"
+    } else {
+        msg += strings.Join(times, ", ")
+    }
 
-	// Примеры кнопок – фиксированные интервалы
-	rows := [][]tb.InlineButton{
-		{
-			{Text: "Отключить", Data: "autopost:disable"},
-		},
-		{
-			{Text: "09:00", Data: "autopost:set:09:00"},
-			{Text: "12:00", Data: "autopost:set:12:00"},
-		},
-		{
-			{Text: "15:00", Data: "autopost:set:15:00"},
-			{Text: "18:00", Data: "autopost:set:18:00"},
-		},
-		{
-			{Text: "21:00", Data: "autopost:set:21:00"},
-		},
-	}
+    markup := &tb.ReplyMarkup{}
+    rows := [][]tb.InlineButton{
+        {
+            {Text: "❌ Отключить", Data: "autopost:disable"},
+        },
+    }
 
-	markup := &tb.ReplyMarkup{InlineKeyboard: rows}
-	b.bot.Send(tb.ChatID(chatID), msg, markup)
+    // динамически создаём кнопки по часам 00:00 – 23:00
+    var row []tb.InlineButton
+    for h := 0; h < 24; h++ {
+        t := fmt.Sprintf("%02d:00", h)
+        row = append(row, tb.InlineButton{Text: t, Data: "autopost:set:" + t})
+        if len(row) == 4 { // по 4 кнопки в ряд
+            rows = append(rows, row)
+            row = []tb.InlineButton{}
+        }
+    }
+    if len(row) > 0 {
+        rows = append(rows, row)
+    }
+
+    markup.InlineKeyboard = rows
+    b.bot.Send(tb.ChatID(chatID), msg, markup)
 }
 
-// Toggle автопост
+// HandleAutopost — обработка кнопок выбора времени
 func (b *Bot) HandleAutopost(c tb.Context) error {
-	data := c.Callback().Data
-	userID := c.Sender().ID
+    data := c.Callback().Data
+    userID := c.Sender().ID
 
-	if data == "autopost:disable" {
-		_ = storage.SetUserAutopost(b.db, userID, []string{})
-		_ = c.Respond(&tb.CallbackResponse{Text: "❌ Автопост отключен"})
-		b.ShowAutopostMenu(userID)
-		return nil
-	}
+    if data == "autopost:disable" {
+        _ = storage.SetUserAutopost(b.db, userID, []string{})
+        _ = c.Respond(&tb.CallbackResponse{Text: "❌ Автопост отключен"})
+        b.ShowAutopostMenu(userID)
+        return nil
+    }
 
-	if strings.HasPrefix(data, "autopost:set:") {
-		t := strings.TrimPrefix(data, "autopost:set:")
+    if strings.HasPrefix(data, "autopost:set:") {
+        t := strings.TrimPrefix(data, "autopost:set:")
 
-		current, _ := storage.GetUserAutopost(b.db, userID)
-		// проверяем, не больше 6
-		if len(current) >= 6 {
-			_ = c.Respond(&tb.CallbackResponse{Text: "⚠️ Можно максимум 6"})
-			return nil
-		}
-		// добавляем новое время
-		current = append(current, t)
-		_ = storage.SetUserAutopost(b.db, userID, current)
-		_ = c.Respond(&tb.CallbackResponse{Text: "✅ Добавлено " + t})
-		b.ShowAutopostMenu(userID)
-	}
-	return nil
+        current, _ := storage.GetUserAutopost(b.db, userID)
+        // проверка: не больше 6
+        if len(current) >= 6 {
+            _ = c.Respond(&tb.CallbackResponse{Text: "⚠️ Можно максимум 6"})
+            return nil
+        }
+        // исключаем дубли
+        for _, tt := range current {
+            if tt == t {
+                _ = c.Respond(&tb.CallbackResponse{Text: "⏳ Уже выбрано"})
+                return nil
+            }
+        }
+
+        current = append(current, t)
+        _ = storage.SetUserAutopost(b.db, userID, current)
+        _ = c.Respond(&tb.CallbackResponse{Text: "✅ Добавлено " + t})
+        b.ShowAutopostMenu(userID)
+    }
+    return nil
 }
 
 // StartNewsUpdater запускает авторассылку по расписанию пользователей
