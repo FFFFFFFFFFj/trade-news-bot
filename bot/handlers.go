@@ -18,22 +18,22 @@ func (b *Bot) IsAdmin(userID int64) bool {
 }
 
 func (b *Bot) HandleMessage(m *tb.Message) {
-	// фиксируем пользователя в базе
+	// Гарантируем, что пользователь есть в таблице users
 	_, _ = b.db.Exec(`INSERT INTO users (id) VALUES ($1) ON CONFLICT DO NOTHING`, m.Chat.ID)
 
 	txt := strings.TrimSpace(m.Text)
 
-	// ==== команды ====
 	if txt == "/start" {
 		subsCount, _ := storage.GetUserSubscriptionCount(b.db, m.Chat.ID)
 		if b.IsAdmin(m.Chat.ID) {
 			usersCount, _ := storage.GetUsersCount(b.db)
 			activeUsers, _ := storage.GetActiveUsersCount(b.db)
 			autopostUsers, _ := storage.GetAutopostUsersCount(b.db)
-			msg := fmt.Sprintf("👑 Админ\nID: %d\n\nВсего пользователей: %d\nПодписанных: %d\nС автопостом: %d\n\nВсего источников: %d",
-				m.Chat.ID, usersCount, activeUsers, autopostUsers, len(storage.MustGetAllSources(b.db)))
+			msg := fmt.Sprintf(
+				"👑 Админ\nID: %d\n\nВсего пользователей (запустили бота): %d\nПодписанных (хотя бы на 1): %d\nС автопостом: %d\n\nВсего источников: %d",
+				m.Chat.ID, usersCount, activeUsers, autopostUsers, len(storage.MustGetAllSources(b.db)),
+			)
 			b.SendMessage(m.Chat.ID, msg)
-			b.ShowAdminMenu(m.Chat.ID) // админ-меню
 		} else {
 			msg := fmt.Sprintf("👤 Пользователь\nID: %d\nПодписок: %d", m.Chat.ID, subsCount)
 			b.SendMessage(m.Chat.ID, msg)
@@ -75,23 +75,6 @@ func (b *Bot) HandleMessage(m *tb.Message) {
 
 	} else if txt == "/mysources" {
 		b.ShowSourcesMenu(m.Chat.ID)
-
-	} else if strings.HasPrefix(txt, "/post ") && b.IsAdmin(m.Chat.ID) {
-		// публикация поста от имени бота
-		content := strings.TrimPrefix(txt, "/post ")
-		b.BroadcastMessage(content)
-
-	} else if b.IsAdmin(m.Chat.ID) && b.waitingAdd[m.Chat.ID] {
-		// админ вводит новый источник
-		url := strings.TrimSpace(txt)
-		err := storage.AddSource(b.db, url)
-		if err != nil {
-			b.SendMessage(m.Chat.ID, "❌ Ошибка добавления источника: "+err.Error())
-		} else {
-			b.SendMessage(m.Chat.ID, "✅ Источник добавлен: "+url)
-		}
-		b.waitingAdd[m.Chat.ID] = false
-		b.ShowSourcesAdmin(m.Chat.ID)
 
 	} else {
 		log.Printf("Сообщение: %s", txt)
