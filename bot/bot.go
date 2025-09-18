@@ -62,12 +62,32 @@ func New(token string, db *sql.DB) *Bot {
 		btnBroadcast:    tb.InlineButton{Unique: "admin_broadcast", Text: "📢 Рассылка всем"},
 	}
 
-	// Привязка админ-кнопок к методам Bot
-	botInstance.bot.Handle(&botInstance.btnAddSource, botInstance.HandleAdminSource)
-	botInstance.bot.Handle(&botInstance.btnRemoveSource, botInstance.HandleAdminSource)
+	// =======================
+	// Админ-кнопки: установка режима ожидания URL
+	// =======================
+	botInstance.bot.Handle(&botInstance.btnAddSource, func(c tb.Context) error {
+		userID := c.Sender().ID
+		if !botInstance.IsAdmin(userID) {
+			return c.Respond(&tb.CallbackResponse{Text: "⚠️ Нет доступа"})
+		}
+		botInstance.pending[userID] = "addsource"
+		return c.Respond(&tb.CallbackResponse{Text: "Введите URL источника для добавления"})
+	})
+
+	botInstance.bot.Handle(&botInstance.btnRemoveSource, func(c tb.Context) error {
+		userID := c.Sender().ID
+		if !botInstance.IsAdmin(userID) {
+			return c.Respond(&tb.CallbackResponse{Text: "⚠️ Нет доступа"})
+		}
+		botInstance.pending[userID] = "removesource"
+		return c.Respond(&tb.CallbackResponse{Text: "Введите URL источника для удаления"})
+	})
+
 	botInstance.bot.Handle(&botInstance.btnBroadcast, botInstance.HandleAdminBroadcast)
 
+	// =======================
 	// Навигация /latest
+	// =======================
 	botInstance.bot.Handle(&botInstance.btnFirst, func(c tb.Context) error {
 		chatID := c.Sender().ID
 		botInstance.latestPage[chatID] = 1
@@ -103,6 +123,7 @@ func New(token string, db *sql.DB) *Bot {
 
 	return botInstance
 }
+
 // Start запускает бота
 func (b *Bot) Start() {
 	b.bot.Handle(tb.OnText, func(c tb.Context) error {
