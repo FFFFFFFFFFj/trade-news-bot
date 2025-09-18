@@ -32,6 +32,6 @@ func main() {
 
 	b := bot.New(token, db)
 
-	go b.StartNewsUpdater(10 * time.Minute)
+	go b.StartNewsUpdater()
 	b.Start()
 }
