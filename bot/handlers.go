@@ -10,7 +10,7 @@ import (
 )
 
 var AdminIDs = map[int64]bool{
-	839986298: true, // твой ID
+	839986298: true,
 }
 
 func (b *Bot) IsAdmin(userID int64) bool {
@@ -18,7 +18,7 @@ func (b *Bot) IsAdmin(userID int64) bool {
 }
 
 func (b *Bot) HandleMessage(m *tb.Message) {
-	// Гарантируем, что пользователь есть в таблице users
+	// Создаём пользователя в базе
 	_, _ = b.db.Exec(`INSERT INTO users (id) VALUES ($1) ON CONFLICT DO NOTHING`, m.Chat.ID)
 
 	txt := strings.TrimSpace(m.Text)
@@ -29,16 +29,13 @@ func (b *Bot) HandleMessage(m *tb.Message) {
 			usersCount, _ := storage.GetUsersCount(b.db)
 			activeUsers, _ := storage.GetActiveUsersCount(b.db)
 			autopostUsers, _ := storage.GetAutopostUsersCount(b.db)
-			msg := fmt.Sprintf(
-				"👑 Админ\nID: %d\n\nВсего пользователей (запустили бота): %d\nПодписанных (хотя бы на 1): %d\nС автопостом: %d\n\nВсего источников: %d",
-				m.Chat.ID, usersCount, activeUsers, autopostUsers, len(storage.MustGetAllSources(b.db)),
-			)
+			msg := fmt.Sprintf("👑 Админ\nID: %d\n\nВсего пользователей (запустили бота): %d\nПодписанных (хотя бы на 1): %d\nС автопостом: %d\n\nВсего источников: %d",
+				m.Chat.ID, usersCount, activeUsers, autopostUsers, len(storage.MustGetAllSources(b.db)))
 			b.SendMessage(m.Chat.ID, msg)
 		} else {
 			msg := fmt.Sprintf("👤 Пользователь\nID: %d\nПодписок: %d", m.Chat.ID, subsCount)
 			b.SendMessage(m.Chat.ID, msg)
 		}
-
 	} else if txt == "/help" {
 		b.SendMessage(m.Chat.ID, "Доступные команды:\n"+
 			"/start – информация о вас\n"+
@@ -47,7 +44,6 @@ func (b *Bot) HandleMessage(m *tb.Message) {
 			"/mysources – управление подписками\n"+
 			"/autopost – настройка авторассылки (0–6 раз в день, время по Москве)\n"+
 			"Можно также указать вручную: /autopost 10:30 15:45\n")
-
 	} else if strings.HasPrefix(txt, "/autopost ") {
 		parts := strings.Fields(txt)[1:]
 		var validTimes []string
@@ -62,20 +58,15 @@ func (b *Bot) HandleMessage(m *tb.Message) {
 			b.SendMessage(m.Chat.ID, "⚠️ Неверный формат времени. Используйте ЧЧ:ММ, например /autopost 09:00 15:30")
 		} else {
 			_ = storage.SetUserAutopost(b.db, m.Chat.ID, validTimes)
-			b.SendMessage(m.Chat.ID, "✅ Время авторассылки обновлено: "+strings.Join(validTimes, ", "))
+			b.SendMessage(m.Chat.ID, "✅ Время авторассылки обновлено: " + strings.Join(validTimes, ", "))
 		}
-
 	} else if txt == "/autopost" {
-		b.ShowAutopostMenu(m.Chat.ID)
-
+		b.ShowAutopostMenu(m.Chat.ID, nil)
 	} else if txt == "/latest" {
-		b.SendMessage(m.Chat.ID, "⏳ Загружаю сегодняшние новости...")
 		b.latestPage[m.Chat.ID] = 1
 		b.ShowLatestNews(m.Chat.ID, nil)
-
 	} else if txt == "/mysources" {
-		b.ShowSourcesMenu(m.Chat.ID)
-
+		b.ShowSourcesMenu(m.Chat.ID, nil)
 	} else {
 		log.Printf("Сообщение: %s", txt)
 	}
