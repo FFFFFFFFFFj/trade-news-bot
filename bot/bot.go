@@ -104,3 +104,20 @@ var AdminIDs = map[int64]bool{
 func (b *Bot) IsAdmin(userID int64) bool {
 	return AdminIDs[userID]
 }
+
+func (b *Bot) StartNewsUpdater() {
+    ticker := time.NewTicker(10 * time.Minute) // интервал обновления
+    for range ticker.C {
+        newsMap, err := storage.FetchAndStoreNews(b.db)
+        if err != nil {
+            log.Printf("Ошибка обновления новостей: %v", err)
+            continue
+        }
+
+        for userID, newsItems := range newsMap {
+            for _, n := range newsItems {
+                b.SendMessage(userID, fmt.Sprintf("📰 %s\n%s", n.Title, n.Link))
+            }
+        }
+    }
+}
