@@ -14,6 +14,6 @@ func (b *Bot) AdminBroadcast(msg string) {
 	}
 
 	for _, u := range users {
-		b.SendMessage(u.ID, "📢 "+msg)
+		b.SendMessage(u, "📢 "+msg)
 	}
 }
