@@ -7,12 +7,12 @@ import (
 
 func (b *Bot) ShowAutopostMenu(chatID int64) {
 	menu := &tb.ReplyMarkup{}
-	var rows [][]tb.InlineButton
+	var rows [][]tb.Btn
 
 	// создаём кнопки выбора времени
 	for hour := 0; hour < 24; hour++ {
 		btn := menu.Data(fmt.Sprintf("%02d:00", hour), fmt.Sprintf("ap_%02d00", hour))
-		rows = append(rows, []tb.InlineButton{btn}) // теперь просто btn, без разыменования
+		rows = append(rows, []tb.Btn{btn})
 	}
 	menu.InlineKeyboard = rows
 
