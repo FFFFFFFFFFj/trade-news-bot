@@ -14,7 +14,8 @@ func (b *Bot) ShowLatestNews(chatID int64, c tb.Context) {
 	}
 	pageSize := 4
 
-	news, _ := storage.GetTodayNewsForUser(b.db, chatID, page, pageSize)
+	// Используем существующую функцию из storage
+	news, _ := storage.GetLatestNewsPageForUser(b.db, chatID, page, pageSize)
 	if len(news) == 0 {
 		b.SendMessage(chatID, "Сегодня новостей нет.")
 		return
@@ -22,7 +23,7 @@ func (b *Bot) ShowLatestNews(chatID int64, c tb.Context) {
 
 	text := "📰 Новости за сегодня:\n\n"
 	for _, n := range news {
-		text += fmt.Sprintf("• <b>%s</b>\n%s\n\n", n.Title, n.URL)
+		text += fmt.Sprintf("• <b>%s</b>\n%s\n\n", n.Title, n.Link)
 	}
 
 	totalCount, _ := storage.GetTodayNewsCountForUser(b.db, chatID)
@@ -49,4 +50,3 @@ func (b *Bot) ShowLatestNews(chatID int64, c tb.Context) {
 		&tb.SendOptions{ParseMode: tb.ModeHTML, ReplyMarkup: &tb.ReplyMarkup{InlineKeyboard: btns}},
 	)
 }
-
