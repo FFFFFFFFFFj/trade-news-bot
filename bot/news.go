@@ -14,8 +14,8 @@ func (b *Bot) ShowLatestNews(chatID int64, c tb.Context) {
 	}
 	pageSize := 4
 
-	// 🔹 Используем правильную функцию из storage
-	news, _ := storage.GetTodayNewsPageForUser(b.db, chatID, page, pageSize)
+	// Используем существующую функцию из storage
+	news, _ := storage.GetLatestNewsPageForUser(b.db, chatID, page, pageSize)
 	if len(news) == 0 {
 		b.SendMessage(chatID, "Сегодня новостей нет.")
 		return
