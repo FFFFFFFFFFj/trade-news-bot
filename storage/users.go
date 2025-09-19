@@ -38,3 +38,9 @@ func GetAutopostUsersCount(db *sql.DB) (int, error) {
 	err := db.QueryRow(`SELECT COUNT(*) FROM user_autopost WHERE times IS NOT NULL AND times <> '[]'`).Scan(&count)
 	return count, err
 }
+
+func GetUserSubscriptionCount(db *sql.DB, userID int64) (int, error) {
+	var count int
+	err := db.QueryRow(`SELECT COUNT(*) FROM subscriptions WHERE user_id=$1`, userID).Scan(&count)
+	return count, err
+}
