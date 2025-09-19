@@ -10,47 +10,39 @@ import (
 )
 
 func (b *Bot) HandleMessage(m *tb.Message) {
-	userID := m.Chat.ID
-	_, _ = b.db.Exec(`INSERT INTO users (id) VALUES ($1) ON CONFLICT DO NOTHING`, userID)
-
+	_, _ = b.db.Exec(`INSERT INTO users (id) VALUES ($1) ON CONFLICT DO NOTHING`, m.Chat.ID)
 	txt := strings.TrimSpace(m.Text)
+	userID := m.Chat.ID
 
-	// Проверяем, ожидает ли админ ввод URL или рассылки
+	// Проверка режима ввода админских команд
 	if mode, ok := b.pending[userID]; ok && b.IsAdmin(userID) {
 		switch mode {
 		case "addsource":
 			if txt == "" {
 				b.SendMessage(userID, "⚠️ URL пустой")
-				return
-			}
-			if err := storage.AddSource(b.db, txt); err != nil {
+			} else if err := storage.AddSource(b.db, txt); err != nil {
 				b.SendMessage(userID, "❌ Ошибка добавления источника")
 			} else {
 				b.SendMessage(userID, "✅ Источник добавлен: "+txt)
 			}
 			b.pending[userID] = ""
 			return
-
 		case "removesource":
 			if txt == "" {
 				b.SendMessage(userID, "⚠️ URL пустой")
-				return
-			}
-			if err := storage.RemoveSource(b.db, txt); err != nil {
+			} else if err := storage.RemoveSource(b.db, txt); err != nil {
 				b.SendMessage(userID, "❌ Ошибка удаления источника")
 			} else {
 				b.SendMessage(userID, "✅ Источник удалён: "+txt)
 			}
 			b.pending[userID] = ""
 			return
-
 		case "broadcast":
 			if txt == "" {
 				b.SendMessage(userID, "⚠️ Сообщение пустое")
-				return
+			} else {
+				b.AdminBroadcast(txt)
 			}
-			count := b.BroadcastMessageToAll(txt)
-			b.SendMessage(userID, fmt.Sprintf("✅ Сообщение разослано %d пользователям", count))
 			b.pending[userID] = ""
 			return
 		}
@@ -72,23 +64,26 @@ func (b *Bot) HandleMessage(m *tb.Message) {
 		}
 
 	case txt == "/help":
-		helpMsg := "Доступные команды:\n" +
-			"/start – информация о вас\n" +
-			"/help – список команд\n" +
-			"/latest – новости за сегодня\n" +
-			"/mysources – управление подписками\n" +
-			"/autopost – настройка авторассылки\n"
 		if b.IsAdmin(userID) {
-			helpMsg += "\nАдмин-команды:\n" +
-				"/addsource – добавить источник\n" +
-				"/removesource – удалить источник\n" +
-				"/listsources – список источников\n" +
-				"/broadcast – рассылка всем\n"
+			b.SendMessage(userID, "Доступные команды:\n"+
+				"/start – информация\n"+
+				"/help – список команд\n"+
+				"/latest – новости\n"+
+				"/mysources – подписки\n"+
+				"/autopost – авторассылка\n\n"+
+				"👑 Админские:\n"+
+				"/addsource – добавить источник\n"+
+				"/removesource – удалить источник\n"+
+				"/listsources – список источников\n"+
+				"/broadcast – рассылка всем")
+		} else {
+			b.SendMessage(userID, "Доступные команды:\n"+
+				"/start – информация\n"+
+				"/help – список команд\n"+
+				"/latest – новости\n"+
+				"/mysources – подписки\n"+
+				"/autopost – авторассылка")
 		}
-		b.SendMessage(userID, helpMsg)
-
-	case txt == "/autopost":
-		b.ShowAutopostMenu(userID)
 
 	case strings.HasPrefix(txt, "/autopost "):
 		parts := strings.Fields(txt)[1:]
@@ -107,6 +102,9 @@ func (b *Bot) HandleMessage(m *tb.Message) {
 			b.SendMessage(userID, "✅ Время авторассылки обновлено: "+strings.Join(validTimes, ", "))
 		}
 
+	case txt == "/autopost":
+		b.ShowAutopostMenu(userID)
+
 	case txt == "/latest":
 		b.latestPage[userID] = 1
 		b.ShowLatestNews(userID, nil)
@@ -114,60 +112,31 @@ func (b *Bot) HandleMessage(m *tb.Message) {
 	case txt == "/mysources":
 		b.ShowSourcesMenu(userID)
 
-	case txt == "/addsource":
-		if !b.IsAdmin(userID) {
-			return
-		}
+	case txt == "/addsource" && b.IsAdmin(userID):
+		b.SendMessage(userID, "Введите URL источника для добавления:")
 		b.pending[userID] = "addsource"
-		b.SendMessage(userID, "Введите URL нового источника:")
 
-	case txt == "/removesource":
-		if !b.IsAdmin(userID) {
-			return
-		}
-		b.pending[userID] = "removesource"
+	case txt == "/removesource" && b.IsAdmin(userID):
 		b.SendMessage(userID, "Введите URL источника для удаления:")
+		b.pending[userID] = "removesource"
 
-	case txt == "/broadcast":
-		if !b.IsAdmin(userID) {
-			return
-		}
-		b.pending[userID] = "broadcast"
-		b.SendMessage(userID, "Введите текст для рассылки всем пользователям:")
-
-	case txt == "/listsources":
-		if !b.IsAdmin(userID) {
-			return
-		}
+	case txt == "/listsources" && b.IsAdmin(userID):
 		sources := storage.MustGetAllSources(b.db)
 		if len(sources) == 0 {
-			b.SendMessage(userID, "Источники не найдены")
+			b.SendMessage(userID, "⚠️ В базе нет источников")
 		} else {
-			msg := "Список источников:\n" + strings.Join(sources, "\n")
-			b.SendMessage(userID, msg)
+			out := "📑 Источники:\n"
+			for i, s := range sources {
+				out += fmt.Sprintf("%d. %s\n", i+1, s)
+			}
+			b.SendMessage(userID, out)
 		}
+
+	case txt == "/broadcast" && b.IsAdmin(userID):
+		b.SendMessage(userID, "Введите текст рассылки:")
+		b.pending[userID] = "broadcast"
 
 	default:
 		log.Printf("Сообщение: %s", txt)
 	}
-}
-
-// BroadcastMessageToAll разсылает текстовое сообщение всем пользователям
-func (b *Bot) BroadcastMessageToAll(msg string) int {
-	rows, err := b.db.Query(`SELECT id FROM users`)
-	if err != nil {
-		log.Printf("Ошибка получения пользователей: %v", err)
-		return 0
-	}
-	defer rows.Close()
-
-	count := 0
-	for rows.Next() {
-		var uid int64
-		if err := rows.Scan(&uid); err == nil {
-			b.SendMessage(uid, msg)
-			count++
-		}
-	}
-	return count
 }
