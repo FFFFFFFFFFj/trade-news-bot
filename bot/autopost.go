@@ -10,8 +10,11 @@ func (b *Bot) ShowAutopostMenu(chatID int64) {
 	var rows [][]tb.InlineButton
 
 	for hour := 0; hour < 24; hour++ {
-		btn := menu.Data(fmt.Sprintf("%02d:00", hour), fmt.Sprintf("ap_%02d00", hour))
-		rows = append(rows, []tb.InlineButton{btn}) // ✅ без разыменования
+		btn := tb.InlineButton{
+			Unique: fmt.Sprintf("ap_%02d00", hour),
+			Text:   fmt.Sprintf("%02d:00", hour),
+		}
+		rows = append(rows, []tb.InlineButton{btn})
 	}
 	menu.InlineKeyboard = rows
 
