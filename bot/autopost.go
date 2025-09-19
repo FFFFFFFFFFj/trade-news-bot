@@ -11,7 +11,7 @@ func (b *Bot) ShowAutopostMenu(chatID int64) {
 
 	for hour := 0; hour < 24; hour++ {
 		btn := menu.Data(fmt.Sprintf("%02d:00", hour), fmt.Sprintf("ap_%02d00", hour))
-		rows = append(rows, []tb.InlineButton{btn}) // убрали разыменование
+		rows = append(rows, []tb.InlineButton{btn}) // ✅ используем btn как есть
 	}
 	menu.InlineKeyboard = rows
 
