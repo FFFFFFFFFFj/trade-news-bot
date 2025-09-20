@@ -45,6 +45,10 @@ func Migrate(db *sql.DB) error {
 			user_id BIGINT PRIMARY KEY,
 			times TEXT
 		);`,
+		`CREATE TABLE IF NOT EXISTS settings (
+    		key TEXT PRIMARY KEY,
+    		value TEXT
+		);`,
 	}
 	for _, q := range queries {
 		if _, err := db.Exec(q); err != nil {
