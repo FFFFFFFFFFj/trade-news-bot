@@ -174,3 +174,44 @@ func GetLatestNewsPageForUser(db *sql.DB, userID int64, page, pageSize int) ([]N
 	}
 	return items, nil
 }
+
+// FetchAndStoreNewsForUser загружает новости только по подпискам конкретного пользователя
+func FetchAndStoreNewsForUser(db *sql.DB, userID int64) error {
+	fp := gofeed.NewParser()
+
+	// достаём список источников, на которые подписан юзер
+	rows, err := db.Query(`SELECT source_url FROM subscriptions WHERE user_id=$1`, userID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	var sources []string
+	for rows.Next() {
+		var src string
+		if err := rows.Scan(&src); err == nil {
+			sources = append(sources, src)
+		}
+	}
+
+	// парсим каждый источник и кладём новости в базу
+	for _, src := range sources {
+		feed, err := fp.ParseURL(src)
+		if err != nil {
+			continue
+		}
+		for _, item := range feed.Items {
+			pub := item.PublishedParsed
+			if pub == nil {
+				now := time.Now()
+				pub = &now
+			}
+			_, _ = db.Exec(`
+				INSERT INTO news (link, title, pub_date, source_url)
+				VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING
+			`, item.Link, item.Title, *pub, src)
+		}
+	}
+
+	return nil
+}
