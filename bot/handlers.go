@@ -106,8 +106,11 @@ func (b *Bot) HandleMessage(m *tb.Message) {
 		b.ShowAutopostMenu(userID)
 
 	case txt == "/latest":
-		b.latestPage[userID] = 1
-		b.ShowLatestNews(userID, nil)
+    	// подгружаем новые новости только по подпискам юзера
+    	_ = storage.FetchAndStoreNewsForUser(b.db, userID)
+
+    	b.latestPage[userID] = 1
+    	b.ShowLatestNews(userID, nil)
 
 	case txt == "/mysources":
 		b.ShowSourcesMenu(userID)
