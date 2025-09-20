@@ -27,6 +27,7 @@ func (b *Bot) HandleMessage(m *tb.Message) {
 			}
 			b.pending[userID] = ""
 			return
+
 		case "removesource":
 			if txt == "" {
 				b.SendMessage(userID, "⚠️ URL пустой")
@@ -37,11 +38,32 @@ func (b *Bot) HandleMessage(m *tb.Message) {
 			}
 			b.pending[userID] = ""
 			return
+
 		case "broadcast":
 			if txt == "" {
 				b.SendMessage(userID, "⚠️ Сообщение пустое")
 			} else {
 				b.AdminBroadcast(txt)
+			}
+			b.pending[userID] = ""
+			return
+
+		case "setchannel":
+			if txt == "" {
+				b.SendMessage(userID, "⚠️ Ссылка пустая")
+			} else {
+				_ = storage.SetSetting(b.db, "channel", txt)
+				b.SendMessage(userID, "✅ Ссылка на канал обновлена")
+			}
+			b.pending[userID] = ""
+			return
+
+		case "setmanual":
+			if txt == "" {
+				b.SendMessage(userID, "⚠️ Ссылка пустая")
+			} else {
+				_ = storage.SetSetting(b.db, "manual", txt)
+				b.SendMessage(userID, "✅ Ссылка на инструкцию обновлена")
 			}
 			b.pending[userID] = ""
 			return
