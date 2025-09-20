@@ -75,7 +75,10 @@ func (b *Bot) HandleMessage(m *tb.Message) {
 				"/addsource – добавить источник\n"+
 				"/removesource – удалить источник\n"+
 				"/listsources – список источников\n"+
-				"/broadcast – рассылка всем")
+				"/broadcast – рассылка всем\n"+
+				"/setchannel <url> – задать ссылку на канал\n"+
+				"/setmanual <url> – задать ссылку на инструкцию\n"+
+				"/getsettings – показать все настройки")
 		} else {
 			b.SendMessage(userID, "Доступные команды:\n"+
 				"/start – информация\n"+
@@ -106,11 +109,10 @@ func (b *Bot) HandleMessage(m *tb.Message) {
 		b.ShowAutopostMenu(userID)
 
 	case txt == "/latest":
-    	// подгружаем новые новости только по подпискам юзера
-    	_ = storage.FetchAndStoreNewsForUser(b.db, userID)
-
-    	b.latestPage[userID] = 1
-    	b.ShowLatestNews(userID, nil)
+		// подгружаем новые новости только по подпискам юзера
+		_ = storage.FetchAndStoreNewsForUser(b.db, userID)
+		b.latestPage[userID] = 1
+		b.ShowLatestNews(userID, nil)
 
 	case txt == "/mysources":
 		b.ShowSourcesMenu(userID)
@@ -138,6 +140,37 @@ func (b *Bot) HandleMessage(m *tb.Message) {
 	case txt == "/broadcast" && b.IsAdmin(userID):
 		b.SendMessage(userID, "Введите текст рассылки:")
 		b.pending[userID] = "broadcast"
+
+	// 🔹 Новые команды для settings
+	case strings.HasPrefix(txt, "/setchannel ") && b.IsAdmin(userID):
+		url := strings.TrimSpace(strings.TrimPrefix(txt, "/setchannel "))
+		if url == "" {
+			b.SendMessage(userID, "⚠️ Укажите ссылку на канал")
+		} else {
+			_ = storage.SetSetting(b.db, "channel", url)
+			b.SendMessage(userID, "✅ Ссылка на канал обновлена")
+		}
+
+	case strings.HasPrefix(txt, "/setmanual ") && b.IsAdmin(userID):
+		url := strings.TrimSpace(strings.TrimPrefix(txt, "/setmanual "))
+		if url == "" {
+			b.SendMessage(userID, "⚠️ Укажите ссылку на инструкцию")
+		} else {
+			_ = storage.SetSetting(b.db, "manual", url)
+			b.SendMessage(userID, "✅ Ссылка на инструкцию обновлена")
+		}
+
+	case txt == "/getsettings" && b.IsAdmin(userID):
+		settings, _ := storage.GetAllSettings(b.db)
+		if len(settings) == 0 {
+			b.SendMessage(userID, "⚠️ Настройки пока пустые")
+		} else {
+			out := "⚙️ Текущие настройки:\n"
+			for k, v := range settings {
+				out += fmt.Sprintf("%s = %s\n", k, v)
+			}
+			b.SendMessage(userID, out)
+		}
 
 	default:
 		log.Printf("Сообщение: %s", txt)
