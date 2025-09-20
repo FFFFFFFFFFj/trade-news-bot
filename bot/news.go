@@ -26,11 +26,15 @@ func (b *Bot) ShowLatestNews(chatID int64, c tb.Context) {
 		text += fmt.Sprintf("• <b>%s</b>\n%s\n\n", n.Title, n.Link)
 	}
 
+	// считаем страницы
 	totalCount, _ := storage.GetTodayNewsCountForUser(b.db, chatID)
 	totalPages := (totalCount + pageSize - 1) / pageSize
 	if totalPages < 1 {
 		totalPages = 1
 	}
+
+	// добавляем счётчик
+	text += fmt.Sprintf("📄 Страница %d/%d", page, totalPages)
 
 	btns := [][]tb.InlineButton{}
 	row := []tb.InlineButton{}
