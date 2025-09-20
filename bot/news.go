@@ -14,10 +14,13 @@ func (b *Bot) ShowLatestNews(chatID int64, c tb.Context) {
 	}
 	pageSize := 4
 
-	// Используем существующую функцию из storage
 	news, _ := storage.GetLatestNewsPageForUser(b.db, chatID, page, pageSize)
 	if len(news) == 0 {
-		b.SendMessage(chatID, "Сегодня новостей нет.")
+		if c != nil {
+			_ = c.Edit("Сегодня новостей нет.")
+		} else {
+			b.SendMessage(chatID, "Сегодня новостей нет.")
+		}
 		return
 	}
 
@@ -33,9 +36,9 @@ func (b *Bot) ShowLatestNews(chatID int64, c tb.Context) {
 		totalPages = 1
 	}
 
-	// добавляем счётчик
 	text += fmt.Sprintf("📄 Страница %d/%d", page, totalPages)
 
+	// формируем кнопки
 	btns := [][]tb.InlineButton{}
 	row := []tb.InlineButton{}
 	if page > 1 {
@@ -47,10 +50,16 @@ func (b *Bot) ShowLatestNews(chatID int64, c tb.Context) {
 	if len(row) > 0 {
 		btns = append(btns, row)
 	}
+	markup := &tb.ReplyMarkup{InlineKeyboard: btns}
 
-	_, _ = b.bot.Send(
-		tb.ChatID(chatID),
-		text,
-		&tb.SendOptions{ParseMode: tb.ModeHTML, ReplyMarkup: &tb.ReplyMarkup{InlineKeyboard: btns}},
-	)
+	// если это вызов из кнопки → редактируем
+	if c != nil {
+		_ = c.Edit(text, &tb.SendOptions{ParseMode: tb.ModeHTML, ReplyMarkup: markup})
+	} else {
+		_, _ = b.bot.Send(
+			tb.ChatID(chatID),
+			text,
+			&tb.SendOptions{ParseMode: tb.ModeHTML, ReplyMarkup: markup},
+		)
+	}
 }
